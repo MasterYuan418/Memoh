@@ -44,6 +44,7 @@ type mcpSession struct {
 	stdin      io.WriteCloser
 	stdout     io.ReadCloser
 	stderr     io.ReadCloser
+	stderrTail *mcpStderrTail
 	readCtx    context.Context
 	cancelRead context.CancelFunc
 	initMu     sync.Mutex
@@ -56,6 +57,44 @@ type mcpSession struct {
 	closeOnce  sync.Once
 	closeErr   error
 	onClose    func()
+}
+
+type mcpStderrTail struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (t *mcpStderrTail) append(line string) {
+	if t == nil || line == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.lines = append(t.lines, line)
+	const maxStderrTailLines = 8
+	if len(t.lines) > maxStderrTailLines {
+		t.lines = append([]string(nil), t.lines[len(t.lines)-maxStderrTailLines:]...)
+	}
+}
+
+func (t *mcpStderrTail) String() string {
+	if t == nil {
+		return ""
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return strings.Join(t.lines, "\n")
+}
+
+func (s *mcpSession) errorWithStderr(err error) error {
+	if err == nil {
+		err = io.EOF
+	}
+	stderr := strings.TrimSpace(s.stderrTail.String())
+	if stderr == "" {
+		return err
+	}
+	return fmt.Errorf("%w: %s", err, stderr)
 }
 
 type mcpSessionInitState uint8
@@ -184,21 +223,21 @@ func (s *mcpSession) callRaw(ctx context.Context, req mcptools.JSONRPCRequest) (
 		s.pendingMu.Lock()
 		delete(s.pending, target)
 		s.pendingMu.Unlock()
-		return nil, err
+		return nil, s.errorWithStderr(err)
 	}
 
 	select {
 	case resp, ok := <-respCh:
 		if !ok {
 			if s.closeErr != nil {
-				return nil, s.closeErr
+				return nil, s.errorWithStderr(s.closeErr)
 			}
 			return nil, io.EOF
 		}
 		return sdkResponsePayload(resp)
 	case <-s.closed:
 		if s.closeErr != nil {
-			return nil, s.closeErr
+			return nil, s.errorWithStderr(s.closeErr)
 		}
 		return nil, io.EOF
 	case <-ctx.Done():
@@ -450,7 +489,7 @@ func sdkIDKey(id sdkjsonrpc.ID) string {
 	return string(raw)
 }
 
-func startMCPStderrLogger(stderr io.ReadCloser, containerID string, logger *slog.Logger) {
+func startMCPStderrLogger(stderr io.ReadCloser, containerID string, logger *slog.Logger, tail *mcpStderrTail) {
 	if stderr == nil {
 		return
 	}
@@ -462,6 +501,7 @@ func startMCPStderrLogger(stderr io.ReadCloser, containerID string, logger *slog
 			if line == "" {
 				continue
 			}
+			tail.append(line)
 			logger.Warn("mcp stderr", slog.String("container_id", containerID), slog.String("message", line))
 		}
 		if err := scanner.Err(); err != nil {
@@ -711,6 +751,7 @@ func (h *ContainerdHandler) startContainerdMCPCommandSession(ctx context.Context
 		stdin:      stdinW,
 		stdout:     stdoutR,
 		stderr:     stderrR,
+		stderrTail: &mcpStderrTail{},
 		readCtx:    readCtx,
 		cancelRead: cancelRead,
 		pending:    make(map[string]chan *sdkjsonrpc.Response),
@@ -767,7 +808,7 @@ func (h *ContainerdHandler) startContainerdMCPCommandSession(ctx context.Context
 		return nil, err
 	}
 	sess.conn = conn
-	startMCPStderrLogger(sess.stderr, containerID, h.logger)
+	startMCPStderrLogger(sess.stderr, containerID, h.logger, sess.stderrTail)
 	go sess.readLoop()
 	go func() {
 		<-sess.closed

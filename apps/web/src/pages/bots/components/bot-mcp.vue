@@ -122,101 +122,108 @@
       <!-- Normal Workspace -->
       <template v-if="selectedItem">
         <!-- Sovereign Header -->
-        <div class="pb-4 border-b border-border/50 sticky top-0 bg-background/95 backdrop-blur z-10 p-4 shrink-0 flex items-start justify-between">
-          <div class="flex items-center gap-3">
+        <div class="pb-4 border-b border-border/50 sticky top-0 bg-background/95 backdrop-blur z-10 p-4 shrink-0 space-y-3">
+          <div class="flex min-w-0 items-center gap-3">
             <span class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/30 text-muted-foreground shadow-sm">
               <Plug class="size-4" />
             </span>
-            <div class="space-y-0.5 flex flex-col justify-center">
-              <h3 class="text-sm font-semibold text-foreground flex items-center gap-2">
-                {{ formData.name || (selectedItem.id === DRAFT_ID ? $t('mcp.unnamedServer') : selectedItem.name) }}
+            <div class="min-w-0 flex-1 space-y-1">
+              <div class="flex min-w-0 items-center gap-2">
+                <h3
+                  class="min-w-0 truncate text-sm font-semibold text-foreground"
+                  :title="formData.name || (selectedItem.id === DRAFT_ID ? $t('mcp.unnamedServer') : selectedItem.name)"
+                >
+                  {{ formData.name || (selectedItem.id === DRAFT_ID ? $t('mcp.unnamedServer') : selectedItem.name) }}
+                </h3>
                 <span
                   class="size-2 rounded-full shrink-0 transition-colors"
                   :class="statusDotClass(selectedItem)"
                 />
-              </h3>
-              <p class="text-[11px] text-muted-foreground font-mono leading-none">
-                {{ $t('mcp.lastProbed') }}: {{ formatDate(selectedItem.last_probed_at) || $t('mcp.statusUnknown') }}
-              </p>
+              </div>
             </div>
           </div>
-          <div class="flex items-center gap-3 mt-1 shrink-0">
-            <!-- Dynamic context micro-copy -->
-            <Transition name="fade">
-              <div
-                v-if="selectedItem && isItemDirty(selectedItem)"
-                class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-muted/40 border border-border/50"
-              >
-                <div class="size-1 rounded-full bg-muted-foreground/40" />
-                <span class="text-[10px] text-muted-foreground font-medium whitespace-nowrap">
-                  Unsaved
-                </span>
-              </div>
-            </Transition>
-
-            <button 
-              v-if="selectedItem.id"
-              type="button"
-              class="inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/30 cursor-pointer border border-border bg-background hover:bg-accent rounded-lg gap-1.5 px-3 h-8 text-xs font-medium shadow-none"
-              @click="handleExportSingle"
-            >
-              <Download class="size-3.5" /> {{ $t('common.export') }}
-            </button>
-            <button 
-              v-if="selectedItem"
-              type="button"
-              :disabled="saveState === 'syncing' || !canProbe"
-              class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/30 cursor-pointer border border-border bg-background hover:bg-accent rounded-lg gap-1.5 px-3 h-8 text-xs font-medium shadow-none group relative"
-              @click="handleProbeInterruption"
-            >
-              <template v-if="saveState === 'verifying'">
-                <X class="size-3.5 hidden group-hover:block text-destructive" />
-                <RefreshCw class="size-3.5 animate-spin group-hover:hidden" />
-                <span class="group-hover:text-destructive">{{ $t('mcp.verifyingCancel') }}</span>
-              </template>
-              <template v-else>
-                <RefreshCw class="size-3.5" /> {{ $t('mcp.probe') }}
-              </template>
-            </button>
-            <div
-              class="w-px h-4 bg-border mx-1"
-              aria-hidden="true"
-            />
-            <ConfirmPopover
-              v-if="isDraft"
-              :message="$t('mcp.discardDraftConfirm')"
-              @confirm="removeDraft"
-            >
-              <template #trigger>
-                <button 
-                  type="button"
-                  class="inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/30 cursor-pointer border border-border bg-background hover:bg-accent rounded-lg gap-1.5 px-3 h-8 text-xs font-medium shadow-none"
+          <div class="flex items-center justify-between gap-3">
+            <p class="min-w-0 truncate text-[11px] text-muted-foreground font-mono leading-none">
+              {{ $t('mcp.lastProbed') }}: {{ formatDate(selectedItem.last_probed_at) || $t('mcp.statusUnknown') }}
+            </p>
+            <div class="flex items-center gap-3 shrink-0">
+              <!-- Dynamic context micro-copy -->
+              <Transition name="fade">
+                <div
+                  v-if="selectedItem && isItemDirty(selectedItem)"
+                  class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-muted/40 border border-border/50"
                 >
-                  {{ $t('mcp.discard') }}
-                </button>
-              </template>
-            </ConfirmPopover>
-            <button 
-              type="button"
-              :disabled="saveState === 'syncing' || saveState === 'verifying'"
-              class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/30 cursor-pointer rounded-lg gap-1.5 px-3 h-8 text-xs font-medium min-w-24 shadow-none"
-              :class="saveBtnClass"
-              @click="handleSave"
-            >
-              <Loader2
-                v-if="saveState === 'syncing'"
-                class="size-3.5 animate-spin"
+                  <div class="size-1 rounded-full bg-muted-foreground/40" />
+                  <span class="text-[10px] text-muted-foreground font-medium whitespace-nowrap">
+                    {{ $t('mcp.unsaved') }}
+                  </span>
+                </div>
+              </Transition>
+
+              <button 
+                v-if="selectedItem.id"
+                type="button"
+                class="inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/30 cursor-pointer border border-border bg-background hover:bg-accent rounded-lg gap-1.5 px-3 h-8 text-xs font-medium shadow-none"
+                @click="handleExportSingle"
+              >
+                <Download class="size-3.5" /> {{ $t('common.export') }}
+              </button>
+              <button 
+                v-if="selectedItem"
+                type="button"
+                :disabled="saveState === 'syncing' || !canProbe"
+                class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/30 cursor-pointer border border-border bg-background hover:bg-accent rounded-lg gap-1.5 px-3 h-8 text-xs font-medium shadow-none group relative"
+                @click="handleProbeInterruption"
+              >
+                <template v-if="saveState === 'verifying'">
+                  <X class="size-3.5 hidden group-hover:block text-destructive" />
+                  <RefreshCw class="size-3.5 animate-spin group-hover:hidden" />
+                  <span class="group-hover:text-destructive">{{ $t('mcp.verifyingCancel') }}</span>
+                </template>
+                <template v-else>
+                  <RefreshCw class="size-3.5" /> {{ $t('mcp.probe') }}
+                </template>
+              </button>
+              <div
+                class="w-px h-4 bg-border mx-1"
+                aria-hidden="true"
               />
-              <Check
-                v-else-if="saveState === 'connected'"
-                class="size-3.5"
-              />
-              <Save
-                v-else
-                class="size-3.5"
-              />
-              {{ saveBtnText }}
-            </button>
+              <ConfirmPopover
+                v-if="isDraft"
+                :message="$t('mcp.discardDraftConfirm')"
+                @confirm="removeDraft"
+              >
+                <template #trigger>
+                  <button 
+                    type="button"
+                    class="inline-flex items-center justify-center whitespace-nowrap transition-all outline-none focus-visible:ring-2 focus-visible:ring-ring/30 cursor-pointer border border-border bg-background hover:bg-accent rounded-lg gap-1.5 px-3 h-8 text-xs font-medium shadow-none"
+                  >
+                    {{ $t('mcp.discard') }}
+                  </button>
+                </template>
+              </ConfirmPopover>
+              <button 
+                type="button"
+                :disabled="saveState === 'syncing' || saveState === 'verifying'"
+                class="inline-flex items-center justify-center whitespace-nowrap transition-all disabled:opacity-50 outline-none focus-visible:ring-2 focus-visible:ring-ring/30 cursor-pointer rounded-lg gap-1.5 px-3 h-8 text-xs font-medium min-w-24 shadow-none"
+                :class="saveBtnClass"
+                @click="handleSave"
+              >
+                <Loader2
+                  v-if="saveState === 'syncing'"
+                  class="size-3.5 animate-spin"
+                />
+                <Check
+                  v-else-if="saveState === 'connected'"
+                  class="size-3.5"
+                />
+                <Save
+                  v-else
+                  class="size-3.5"
+                />
+                {{ saveBtnText }}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -482,13 +489,26 @@
                       :value-placeholder="$t('mcp.placeholders.envValue')"
                     />
                   </div>
-                  <div v-else>
+                  <template v-else>
+                    <div
+                      v-if="envPairs.length > 0"
+                      class="space-y-2"
+                    >
+                      <h6 class="text-[11px] font-medium text-muted-foreground">
+                        {{ $t('mcp.envVars') }}
+                      </h6>
+                      <KeyValueEditor
+                        v-model="envPairs"
+                        :key-placeholder="$t('mcp.placeholders.envKey')"
+                        :value-placeholder="$t('mcp.placeholders.envValue')"
+                      />
+                    </div>
                     <KeyValueEditor
                       v-model="headerPairs"
                       :key-placeholder="$t('mcp.placeholders.headerKey')"
                       :value-placeholder="$t('mcp.placeholders.headerValue')"
                     />
-                  </div>
+                  </template>
                 </div>
 
                 <!-- Sub Block: OAuth (Remote Only) -->
@@ -1233,6 +1253,9 @@ function selectItem(item: McpItem) {
   argsTags.value = configArray(cfg, 'args')
   envPairs.value = recordToPairs(configMap(cfg, 'env'))
   headerPairs.value = recordToPairs(configMap(cfg, 'headers'))
+  if (envPairs.value.length > 0 || headerPairs.value.length > 0) {
+    showAdvanced.value = true
+  }
 }
 
 function removeDraft() {
@@ -1315,12 +1338,20 @@ function buildRequestBody(): McpUpsertRequest {
     if (Object.keys(envRecord).length > 0) body.env = envRecord
     if (formData.value.cwd.trim()) body.cwd = formData.value.cwd.trim()
   } else {
-    body.url = formData.value.url.trim()
+    const templateVars = pairsToRecord(envPairs.value)
+    body.url = substituteTemplateVars(formData.value.url.trim(), templateVars)
     const headerRecord = pairsToRecord(headerPairs.value)
-    if (Object.keys(headerRecord).length > 0) body.headers = headerRecord
+    const resolvedHeaders = Object.fromEntries(
+      Object.entries(headerRecord).map(([key, value]) => [key, substituteTemplateVars(value, templateVars)]),
+    )
+    if (Object.keys(resolvedHeaders).length > 0) body.headers = resolvedHeaders
     if (formData.value.transport === 'sse') body.transport = 'sse'
   }
   return body
+}
+
+function substituteTemplateVars(value: string, vars: Record<string, string>) {
+  return value.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (match, key: string) => vars[key] ?? match)
 }
 
 async function loadList() {
@@ -1603,6 +1634,7 @@ function applyPendingDraft() {
     if (Object.keys(env).length) config.env = env
   } else {
     if (entry.url) config.url = entry.url
+    if (Object.keys(env).length) config.env = env
     if (Object.keys(headers).length) config.headers = headers
   }
   const draft: McpItem = {

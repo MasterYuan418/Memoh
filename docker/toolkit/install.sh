@@ -241,8 +241,12 @@ install_pinned_npm() {
   dest_dir="$OUTDIR/$node_dir/lib/node_modules/npm"
   extract_dir="$TMPDIR/npm-$node_dir"
   if [ -f "$dest_dir/bin/npm-cli.js" ]; then
-    echo "npm v${NPM_VERSION} already installed for $node_dir; skipping download."
-    return
+    current_version="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$dest_dir/package.json" 2>/dev/null | head -n 1)"
+    if [ "$current_version" = "$NPM_VERSION" ]; then
+      echo "npm v${NPM_VERSION} already installed for $node_dir; skipping download."
+      return
+    fi
+    echo "Replacing npm v${current_version:-unknown} with pinned npm v${NPM_VERSION} for $node_dir."
   fi
 
   ensure_npm_archive

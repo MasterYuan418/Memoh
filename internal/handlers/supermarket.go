@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 	"time"
 
@@ -420,10 +421,6 @@ func (h *SupermarketHandler) fetchMcpEntry(c echo.Context, mcpID string) (Superm
 
 func (*SupermarketHandler) mcpEntryToUpsert(entry SupermarketMcpEntry, envOverrides map[string]string) mcp.UpsertRequest {
 	headers := make(map[string]string, len(entry.Headers))
-	for _, hdr := range entry.Headers {
-		headers[hdr.Key] = hdr.DefaultValue
-	}
-
 	env := make(map[string]string, len(entry.Env))
 	for _, e := range entry.Env {
 		if override, ok := envOverrides[e.Key]; ok {
@@ -432,14 +429,37 @@ func (*SupermarketHandler) mcpEntryToUpsert(entry SupermarketMcpEntry, envOverri
 			env[e.Key] = e.DefaultValue
 		}
 	}
+	for _, hdr := range entry.Headers {
+		headers[hdr.Key] = expandSupermarketTemplateVars(hdr.DefaultValue, env)
+	}
+
+	args := make([]string, 0, len(entry.Args))
+	for _, arg := range entry.Args {
+		args = append(args, expandSupermarketTemplateVars(arg, env))
+	}
 
 	return mcp.UpsertRequest{
 		Name:      entry.Name,
-		Command:   entry.Command,
-		Args:      entry.Args,
-		URL:       entry.URL,
+		Command:   expandSupermarketTemplateVars(entry.Command, env),
+		Args:      args,
+		URL:       expandSupermarketTemplateVars(entry.URL, env),
 		Headers:   headers,
 		Env:       env,
 		Transport: entry.Transport,
 	}
 }
+
+func expandSupermarketTemplateVars(value string, vars map[string]string) string {
+	if value == "" || len(vars) == 0 {
+		return value
+	}
+	return supermarketTemplateVarPattern.ReplaceAllStringFunc(value, func(match string) string {
+		key := match[2 : len(match)-1]
+		if val, ok := vars[key]; ok {
+			return val
+		}
+		return match
+	})
+}
+
+var supermarketTemplateVarPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
