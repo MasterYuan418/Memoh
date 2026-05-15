@@ -29,6 +29,11 @@ async function bootstrap() {
     baseUrl: await window.api.desktop.apiBaseUrl(),
     onUnauthorized: () => router.replace({ name: 'Login' }),
   })
+  window.api.window.onChatNavigate((target) => {
+    if (!target.startsWith('/chat')) return
+    if (router.currentRoute.value.fullPath === target) return
+    void router.push(target)
+  })
 
   const app = createApp(App)
     .use(createPinia().use(piniaPluginPersistedstate))

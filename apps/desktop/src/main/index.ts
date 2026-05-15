@@ -71,6 +71,14 @@ const CHAT_DEFAULTS = { width: 1280, height: 800, minWidth: 960, minHeight: 600 
 const SETTINGS_DEFAULTS = { width: 1080, height: 720, minWidth: 880, minHeight: 560 }
 
 type WindowKind = 'chat' | 'settings'
+type TrayBot = {
+  id: string
+  displayName: string
+}
+type TraySettingsItem = {
+  label: string
+  target: string
+}
 
 let chatWindow: BrowserWindow | null = null
 let settingsWindow: BrowserWindow | null = null
@@ -155,8 +163,145 @@ function revealChatWindow(): void {
   focusWindow(window)
 }
 
+function openBotWorkspace(botId: string): void {
+  const id = botId.trim()
+  if (!id) return
+  const window = ensureWindow('chat')
+  focusWindow(window)
+  const target = `/chat/${encodeURIComponent(id)}`
+  if (window.webContents.isLoading()) {
+    window.webContents.once('did-finish-load', () => {
+      if (window.isDestroyed()) return
+      window.webContents.send('chat:navigate', target)
+    })
+    return
+  }
+  window.webContents.send('chat:navigate', target)
+}
+
+const SETTINGS_TRAY_ITEMS: TraySettingsItem[] = [
+  { label: 'Bots', target: '/settings/bots' },
+  { label: 'Providers', target: '/settings/providers' },
+  { label: 'Web Search', target: '/settings/web-search' },
+  { label: 'Memory', target: '/settings/memory' },
+  { label: 'Speech', target: '/settings/speech' },
+  { label: 'Transcription', target: '/settings/transcription' },
+  { label: 'Email', target: '/settings/email' },
+  { label: 'Supermarket', target: '/settings/supermarket' },
+  { label: 'Usage', target: '/settings/usage' },
+  { label: 'Appearance', target: '/settings/appearance' },
+  { label: 'Profile', target: '/settings/profile' },
+  { label: 'About', target: '/settings/about' },
+]
+
+function openSettingsWindow(target?: string): void {
+  const window = ensureWindow('settings')
+  focusWindow(window)
+  if (target?.startsWith('/settings')) {
+    dispatchSettingsNavigate(window, target)
+  }
+}
+
 function quitFromTray(): void {
   app.quit()
+}
+
+function buildTrayMenu(bots: TrayBot[] = []): Electron.Menu {
+  const botItems: MenuItemConstructorOptions[] = bots.length > 0
+    ? bots.map((bot) => ({
+        label: bot.displayName,
+        click: () => openBotWorkspace(bot.id),
+      }))
+    : [{ label: 'No Bots', enabled: false }]
+
+  return Menu.buildFromTemplate([
+    {
+      label: 'Show Memoh',
+      click: revealChatWindow,
+    },
+    { type: 'separator' },
+    {
+      label: 'Bots',
+      enabled: false,
+    },
+    ...botItems,
+    { type: 'separator' },
+    {
+      label: 'Settings',
+      submenu: [
+        {
+          label: 'All Settings',
+          click: () => openSettingsWindow('/settings'),
+        },
+        { type: 'separator' },
+        ...SETTINGS_TRAY_ITEMS.map((item) => ({
+          label: item.label,
+          click: () => openSettingsWindow(item.target),
+        })),
+      ],
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit Memoh',
+      click: quitFromTray,
+    },
+  ])
+}
+
+function normalizeTrayBots(payload: unknown): TrayBot[] {
+  if (!payload || typeof payload !== 'object') return []
+  const items = (payload as { items?: unknown }).items
+  if (!Array.isArray(items)) return []
+  return items.flatMap((item): TrayBot[] => {
+    if (!item || typeof item !== 'object') return []
+    const record = item as { id?: unknown; display_name?: unknown; name?: unknown }
+    const id = typeof record.id === 'string' ? record.id.trim() : ''
+    if (!id) return []
+    const displayName =
+      (typeof record.display_name === 'string' ? record.display_name.trim() : '') ||
+      (typeof record.name === 'string' ? record.name.trim() : '') ||
+      id
+    return [{ id, displayName }]
+  })
+}
+
+async function fetchTrayBots(): Promise<TrayBot[]> {
+  const { baseUrl } = getLocalServerStatus()
+  const token = await getDesktopAuthToken()
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/bots`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  })
+  if (!response.ok) {
+    throw new Error(`GET /bots failed with ${response.status}`)
+  }
+  return normalizeTrayBots(await response.json())
+}
+
+function setTrayMenu(bots: TrayBot[] = []): void {
+  appTray?.setContextMenu(buildTrayMenu(bots))
+}
+
+async function refreshTrayMenu(): Promise<void> {
+  try {
+    setTrayMenu(await fetchTrayBots())
+  } catch (error) {
+    console.error('failed to refresh tray bots', error)
+    setTrayMenu()
+  }
+}
+
+async function showTrayMenu(): Promise<void> {
+  if (!appTray) return
+  try {
+    const menu = buildTrayMenu(await fetchTrayBots())
+    appTray.setContextMenu(menu)
+    appTray.popUpContextMenu(menu)
+  } catch (error) {
+    console.error('failed to show tray bots', error)
+    const menu = buildTrayMenu()
+    appTray.setContextMenu(menu)
+    appTray.popUpContextMenu(menu)
+  }
 }
 
 function createAppTray(): void {
@@ -164,19 +309,14 @@ function createAppTray(): void {
 
   appTray = new Tray(createTrayIcon())
   appTray.setToolTip('Memoh')
-  appTray.setContextMenu(Menu.buildFromTemplate([
-    {
-      label: 'Open Memoh',
-      click: revealChatWindow,
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit Memoh',
-      click: quitFromTray,
-    },
-  ]))
-  appTray.on('click', revealChatWindow)
-  appTray.on('double-click', revealChatWindow)
+  setTrayMenu()
+  appTray.on('click', () => {
+    void showTrayMenu()
+  })
+  appTray.on('right-click', () => {
+    void showTrayMenu()
+  })
+  void refreshTrayMenu()
 }
 
 // `electron-vite` emits the preload bundle as `index.mjs` because the
@@ -543,6 +683,7 @@ app.whenReady().then(async () => {
       if (target.webContents.id === senderId) continue
       target.webContents.send('desktop:invalidate', payload)
     }
+    void refreshTrayMenu()
   })
 
   chatWindow = createChatWindow()

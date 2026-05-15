@@ -78,6 +78,11 @@ const api = {
         cb(target)
       })
     },
+    onChatNavigate: (cb: (target: string) => void): void => {
+      ipcRenderer.on('chat:navigate', (_event: IpcRendererEvent, target: string) => {
+        cb(target)
+      })
+    },
   },
 }
 
