@@ -67,7 +67,9 @@ func main() {
 	// Container-native tools take priority since toolkit is appended at the end.
 	_ = os.Setenv("PATH", os.Getenv("PATH")+":/opt/memoh/toolkit/bin")
 
+	reverseHTTP := bridgesvc.NewReverseHTTPBroker()
 	startDisplaySupervisor(ctx)
+	startACPToolsProxy(ctx, reverseHTTP)
 
 	// PID 1 zombie reaping: when bridge runs as PID 1 inside a container,
 	// orphaned child processes become zombies unless reaped.
@@ -85,6 +87,10 @@ func main() {
 	network := "unix"
 	address := os.Getenv("BRIDGE_SOCKET_PATH")
 	if tcpAddr := os.Getenv("BRIDGE_TCP_ADDR"); tcpAddr != "" {
+		if !isLoopbackTCPAddr(tcpAddr) {
+			logger.Error("BRIDGE_TCP_ADDR must be a loopback address; non-loopback TCP exposes bridge gRPC without TLS/auth", slog.String("addr", tcpAddr))
+			return
+		}
 		network = "tcp"
 		address = tcpAddr
 	}
@@ -121,6 +127,7 @@ func main() {
 		DefaultWorkDir:    bridgesvc.DefaultWorkDir,
 		DataMount:         bridgesvc.DefaultWorkDir,
 		AllowHostAbsolute: true,
+		ReverseHTTP:       reverseHTTP,
 	}))
 	reflection.Register(srv)
 

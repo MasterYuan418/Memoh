@@ -43,6 +43,7 @@ type Options struct {
 	WorkspaceRoot     string
 	DataMount         string
 	AllowHostAbsolute bool
+	ReverseHTTP       *ReverseHTTPBroker
 }
 
 type Server struct {
@@ -51,6 +52,7 @@ type Server struct {
 	workspaceRoot     string
 	dataMount         string
 	allowHostAbsolute bool
+	reverseHTTP       *ReverseHTTPBroker
 }
 
 func New(opts Options) *Server {
@@ -73,6 +75,7 @@ func New(opts Options) *Server {
 		workspaceRoot:     filepath.Clean(workspaceRoot),
 		dataMount:         filepath.Clean(dataMount),
 		allowHostAbsolute: opts.AllowHostAbsolute,
+		reverseHTTP:       opts.ReverseHTTP,
 	}
 }
 
@@ -348,6 +351,13 @@ func (*Server) Tunnel(stream pb.ContainerService_TunnelServer) error {
 	}
 }
 
+func (s *Server) ReverseHTTP(stream pb.ContainerService_ReverseHTTPServer) error {
+	if s.reverseHTTP == nil {
+		return status.Error(codes.Unavailable, "reverse HTTP stream is not configured")
+	}
+	return s.reverseHTTP.ServeReverseHTTP(stream)
+}
+
 func (s *Server) execPTY(stream pb.ContainerService_ExecServer, firstMsg *pb.ExecInput) error {
 	command := firstMsg.GetCommand()
 	workDir := s.resolveExecWorkDir(firstMsg.GetWorkDir())
@@ -365,6 +375,7 @@ func (s *Server) execPTY(stream pb.ContainerService_ExecServer, firstMsg *pb.Exe
 	} else {
 		cmd = exec.CommandContext(ctx, "/bin/sh", "-c", command) //nolint:gosec // G204: intentional agent command execution.
 	}
+	configurePTYCommandCancellation(cmd)
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(), firstMsg.GetEnv()...)
 	cmd.Env = append(cmd.Env, "TERM=xterm-256color")
@@ -414,14 +425,21 @@ func (s *Server) execPipe(stream pb.ContainerService_ExecServer, firstMsg *pb.Ex
 	workDir := s.resolveExecWorkDir(firstMsg.GetWorkDir())
 
 	timeout := int(firstMsg.GetTimeoutSeconds())
-	if timeout <= 0 {
-		timeout = defaultTimeout
+	noTimeout := timeout < 0
+	var procCtx context.Context
+	var procCancel context.CancelFunc
+	if noTimeout {
+		procCtx, procCancel = context.WithCancel(context.Background())
+	} else {
+		if timeout == 0 {
+			timeout = defaultTimeout
+		}
+		procCtx, procCancel = context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	}
-
-	procCtx, procCancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer procCancel()
 
 	cmd := exec.CommandContext(procCtx, "/bin/sh", "-c", command) //nolint:gosec // G204: intentional agent command execution.
+	configureCommandCancellation(cmd)
 	cmd.Dir = workDir
 	if len(firstMsg.GetEnv()) > 0 {
 		cmd.Env = append(os.Environ(), firstMsg.GetEnv()...)
@@ -448,6 +466,9 @@ func (s *Server) execPipe(stream pb.ContainerService_ExecServer, firstMsg *pb.Ex
 		select {
 		case <-procCtx.Done():
 		case <-stream.Context().Done():
+			if noTimeout {
+				procCancel()
+			}
 		}
 		_ = stdoutPipe.Close()
 		_ = stderrPipe.Close()

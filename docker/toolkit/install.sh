@@ -14,7 +14,11 @@
 #   NODEJS_MIRROR       Default: https://nodejs.org/dist
 #   NODEJS_MUSL_MIRROR  Default: https://unofficial-builds.nodejs.org/download/release
 #   NPM_MIRROR          Default: https://registry.npmjs.org
+#   CODEX_VERSION       Default: pinned @openai/codex version below
+#   CODEX_ACP_VERSION   Default: pinned @zed-industries/codex-acp version below
 #   ALPINE_MIRROR       Default: https://dl-cdn.alpinelinux.org/alpine
+#   DEBIAN_MIRROR       Default: https://deb.debian.org/debian
+#   DEBIAN_VERSION      Default: bookworm
 #   UV_MIRROR           Default: https://github.com/astral-sh/uv/releases/latest/download
 #   MEMOH_DISPLAY_OUTDIR
 #                       Optional override for display_output_dir.
@@ -24,6 +28,8 @@ set -eu
 ALPINE_VERSION=3.23
 NODE_VERSION=24.14.0
 NPM_VERSION=10.9.2
+CODEX_VERSION="${CODEX_VERSION:-0.133.0}"
+CODEX_ACP_VERSION="${CODEX_ACP_VERSION:-0.15.0}"
 
 OUTDIR="${1:-.toolkit}"
 ARCH="${2:-}"
@@ -42,11 +48,13 @@ NODEJS_MIRROR="${NODEJS_MIRROR:-https://nodejs.org/dist}"
 NODEJS_MUSL_MIRROR="${NODEJS_MUSL_MIRROR:-https://unofficial-builds.nodejs.org/download/release}"
 NPM_MIRROR="${NPM_MIRROR:-https://registry.npmjs.org}"
 ALPINE_MIRROR="${ALPINE_MIRROR:-https://dl-cdn.alpinelinux.org/alpine}"
+DEBIAN_MIRROR="${DEBIAN_MIRROR:-https://deb.debian.org/debian}"
+DEBIAN_VERSION="${DEBIAN_VERSION:-bookworm}"
 UV_MIRROR="${UV_MIRROR:-https://github.com/astral-sh/uv/releases/latest/download}"
 
 case "$ARCH" in
-  amd64) NODE_ARCH=x64;  UV_ARCH=x86_64;  APK_ARCH=x86_64 ;;
-  arm64) NODE_ARCH=arm64; UV_ARCH=aarch64; APK_ARCH=aarch64 ;;
+  amd64) NODE_ARCH=x64;  UV_ARCH=x86_64;  APK_ARCH=x86_64;  DEB_ARCH=amd64; NPM_CPU=x64 ;;
+  arm64) NODE_ARCH=arm64; UV_ARCH=aarch64; APK_ARCH=aarch64; DEB_ARCH=arm64; NPM_CPU=arm64 ;;
   *) echo "ERROR: unsupported arch: $ARCH" >&2; exit 1 ;;
 esac
 
@@ -197,6 +205,28 @@ install_apk_package() {
   INSTALLED_APK_PACKAGES="$INSTALLED_APK_PACKAGES $pkg"
 }
 
+install_ca_bundle() {
+  dest_dir="$OUTDIR/certs"
+  dest_path="$dest_dir/ca-certificates.crt"
+
+  mkdir -p "$dest_dir"
+  for candidate in \
+    /etc/ssl/certs/ca-certificates.crt \
+    /etc/ssl/cert.pem \
+    /opt/homebrew/etc/ca-certificates/cert.pem \
+    /usr/local/etc/openssl@3/cert.pem \
+    /usr/local/etc/openssl/cert.pem; do
+    if [ -f "$candidate" ]; then
+      cp "$candidate" "$dest_path"
+      chmod 0644 "$dest_path"
+      echo "CA bundle installed from $candidate"
+      return
+    fi
+  done
+
+  echo "warning: no host CA bundle found; Codex may fail HTTPS requests in minimal workspace images." >&2
+}
+
 apk_package_filename_from_index() {
   pkg="$1"
   index_text="$2"
@@ -234,6 +264,134 @@ install_musl_runtime_libs() {
     tar -xzf "$pkg_path" -C "$extract_dir"
     cp -a "$extract_dir/usr/lib/." "$dest_dir/"
   done
+}
+
+extract_debian_data_archive() {
+  deb_path="$1"
+  extract_dir="$2"
+
+  if command -v ar >/dev/null 2>&1; then
+    (cd "$extract_dir" && ar x "$deb_path")
+    find "$extract_dir" -name 'data.tar.*' | head -n 1
+    return
+  fi
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$deb_path" "$extract_dir" <<'PY'
+import os
+import sys
+
+deb_path, extract_dir = sys.argv[1], sys.argv[2]
+with open(deb_path, "rb") as fh:
+    if fh.read(8) != b"!<arch>\n":
+        raise SystemExit("not a Debian ar archive")
+    while True:
+        header = fh.read(60)
+        if not header:
+            break
+        if len(header) != 60 or header[58:60] != b"`\n":
+            raise SystemExit("invalid Debian ar member header")
+        name = header[:16].decode("utf-8").strip().rstrip("/")
+        size = int(header[48:58].decode("utf-8").strip())
+        payload = fh.read(size)
+        if size % 2:
+            fh.read(1)
+        if name.startswith("data.tar."):
+            out = os.path.join(extract_dir, name)
+            with open(out, "wb") as out_fh:
+                out_fh.write(payload)
+            print(out)
+            raise SystemExit(0)
+raise SystemExit("Debian package has no data archive")
+PY
+    return
+  fi
+
+  echo "ERROR: ar or python3 is required to extract Debian packages" >&2
+  exit 1
+}
+
+extract_debian_package() {
+  deb_path="$1"
+  extract_dir="$2"
+
+  if command -v dpkg-deb >/dev/null 2>&1; then
+    dpkg-deb -x "$deb_path" "$extract_dir"
+    return
+  fi
+
+  data_archive="$(extract_debian_data_archive "$deb_path" "$extract_dir")"
+  if [ -z "$data_archive" ]; then
+    echo "ERROR: libssl3 Debian package has no data archive" >&2
+    exit 1
+  fi
+  case "$data_archive" in
+    *.tar.xz) tar -xJf "$data_archive" -C "$extract_dir" ;;
+    *.tar.gz) tar -xzf "$data_archive" -C "$extract_dir" ;;
+    *.tar.zst)
+      if tar --help 2>/dev/null | grep -q -- '--zstd'; then
+        tar --zstd -xf "$data_archive" -C "$extract_dir"
+      elif command -v zstd >/dev/null 2>&1; then
+        zstd -dc "$data_archive" | tar -xf - -C "$extract_dir"
+      else
+        echo "ERROR: zstd is required to extract $data_archive" >&2
+        exit 1
+      fi
+      ;;
+    *) echo "ERROR: unsupported Debian data archive $data_archive" >&2; exit 1 ;;
+  esac
+}
+
+install_glibc_openssl_libs() {
+  dest_dir="$OUTDIR/glibc-lib"
+  if [ -f "$dest_dir/libssl.so.3" ] && [ -f "$dest_dir/libcrypto.so.3" ]; then
+    echo "glibc OpenSSL runtime libs already installed; skipping download."
+    return
+  fi
+
+  rm -rf "$dest_dir"
+  mkdir -p "$dest_dir"
+
+  if [ "$(uname -s)" = "Linux" ]; then
+    for lib_dir in /usr/lib/x86_64-linux-gnu /usr/lib/aarch64-linux-gnu /lib/x86_64-linux-gnu /lib/aarch64-linux-gnu; do
+      if [ -f "$lib_dir/libssl.so.3" ] && [ -f "$lib_dir/libcrypto.so.3" ]; then
+        cp -a "$lib_dir/libssl.so.3" "$lib_dir/libcrypto.so.3" "$dest_dir/"
+        echo "glibc OpenSSL runtime libs installed from $lib_dir"
+        return
+      fi
+    done
+  fi
+
+  echo "Downloading glibc OpenSSL runtime libs (${DEB_ARCH})..."
+  index_gz="$TMPDIR/debian-packages-${DEB_ARCH}.gz"
+  index_text="$TMPDIR/debian-packages-${DEB_ARCH}"
+  wget -qO "$index_gz" "${DEBIAN_MIRROR}/dists/${DEBIAN_VERSION}/main/binary-${DEB_ARCH}/Packages.gz"
+  gunzip -c "$index_gz" > "$index_text"
+
+  deb_filename="$(awk '
+    /^Package: libssl3$/ { hit = 1; next }
+    hit && /^Filename: / { print substr($0, 11); exit }
+    /^$/ { hit = 0 }
+  ' "$index_text")"
+  if [ -z "$deb_filename" ]; then
+    echo "ERROR: failed to resolve Debian package libssl3 (${DEB_ARCH})" >&2
+    exit 1
+  fi
+
+  deb_path="$TMPDIR/libssl3.deb"
+  extract_dir="$TMPDIR/extract-libssl3"
+  rm -rf "$extract_dir"
+  mkdir -p "$extract_dir"
+  wget -qO "$deb_path" "${DEBIAN_MIRROR}/${deb_filename}"
+  extract_debian_package "$deb_path" "$extract_dir"
+
+  libssl_path="$(find "$extract_dir" -path '*/libssl.so.3' | head -n 1)"
+  libcrypto_path="$(find "$extract_dir" -path '*/libcrypto.so.3' | head -n 1)"
+  if [ -z "$libssl_path" ] || [ -z "$libcrypto_path" ]; then
+    echo "ERROR: libssl3 package did not contain libssl.so.3 and libcrypto.so.3" >&2
+    exit 1
+  fi
+  cp -a "$libssl_path" "$libcrypto_path" "$dest_dir/"
 }
 
 install_pinned_npm() {
@@ -313,6 +471,102 @@ install_uv() {
     | tar -xzf - --strip-components=1 -C "$extract_dir"
   mv "$extract_dir/uv" "$OUTDIR/uv"
   chmod +x "$OUTDIR/uv"
+}
+
+npm_cli() {
+  node_dir="$1"
+  echo "$OUTDIR/$node_dir/lib/node_modules/npm/bin/npm-cli.js"
+}
+
+run_toolkit_npm() {
+  node_dir="$1"
+  shift
+  node_bin="$OUTDIR/$node_dir/bin/node"
+  npm_bin="$(npm_cli "$node_dir")"
+  if [ ! -x "$node_bin" ] || [ ! -f "$npm_bin" ]; then
+    return 1
+  fi
+
+  case "$node_dir" in
+    node-musl)
+      if [ -d "$OUTDIR/node-musl/runtime-lib" ]; then
+        LD_LIBRARY_PATH="$OUTDIR/node-musl/runtime-lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+          "$node_bin" "$npm_bin" "$@"
+      else
+        "$node_bin" "$npm_bin" "$@"
+      fi
+      ;;
+    *)
+      "$node_bin" "$npm_bin" "$@"
+      ;;
+  esac
+}
+
+install_acp_packages_with_toolkit_npm() {
+  node_dir="$1"
+  run_toolkit_npm "$node_dir" \
+    install \
+    -g \
+    --prefix "$OUTDIR/acp" \
+    --include=optional \
+    --omit=dev \
+    --no-audit \
+    --no-fund \
+    --registry "$NPM_MIRROR" \
+    --os=linux \
+    --cpu="$NPM_CPU" \
+    --libc=glibc \
+    "@openai/codex@$CODEX_VERSION" \
+    "@zed-industries/codex-acp@$CODEX_ACP_VERSION"
+}
+
+install_acp_packages_with_host_npm() {
+  npm \
+    install \
+    -g \
+    --prefix "$OUTDIR/acp" \
+    --include=optional \
+    --omit=dev \
+    --no-audit \
+    --no-fund \
+    --registry "$NPM_MIRROR" \
+    --os=linux \
+    --cpu="$NPM_CPU" \
+    --libc=glibc \
+    "@openai/codex@$CODEX_VERSION" \
+    "@zed-industries/codex-acp@$CODEX_ACP_VERSION"
+}
+
+install_acp_packages() {
+  codex_bin="$OUTDIR/acp/lib/node_modules/@openai/codex/bin/codex.js"
+  codex_acp_bin="$OUTDIR/acp/lib/node_modules/@zed-industries/codex-acp/bin/codex-acp.js"
+  if [ -f "$codex_bin" ] && [ -f "$codex_acp_bin" ]; then
+    echo "Codex ACP packages already installed; skipping npm install."
+    return
+  fi
+
+  echo "Installing Codex ACP packages for linux-${NPM_CPU}..."
+  mkdir -p "$OUTDIR/acp"
+
+  # On Linux builders, prefer the freshly downloaded target Node/npm so Docker
+  # builds do not depend on a host npm install. On macOS development hosts the
+  # downloaded Linux Node cannot run, so fall back to the project npm.
+  if [ "$(uname -s)" = "Linux" ]; then
+    if install_acp_packages_with_toolkit_npm node-glibc; then
+      return
+    fi
+    if install_acp_packages_with_toolkit_npm node-musl; then
+      return
+    fi
+  fi
+
+  if command -v npm >/dev/null 2>&1; then
+    install_acp_packages_with_host_npm
+    return
+  fi
+
+  echo "ERROR: npm is required to install Codex ACP packages into the workspace toolkit." >&2
+  exit 1
 }
 
 write_display_wrappers() {
@@ -556,11 +810,14 @@ mkdir -p "$OUTDIR/node-glibc" "$OUTDIR/node-musl"
 install_node_glibc
 install_node_musl
 install_musl_runtime_libs
+install_glibc_openssl_libs
 
 install_pinned_npm node-glibc
 install_pinned_npm node-musl
 
 install_uv
+install_acp_packages
+install_ca_bundle
 
 echo "Toolkit installed to $OUTDIR"
 install_display_bundle

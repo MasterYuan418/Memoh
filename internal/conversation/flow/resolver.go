@@ -82,6 +82,7 @@ type Resolver struct {
 	accountService    *accounts.Service
 	sessionService    SessionService
 	routeService      RouteService
+	acpPool           acpPrompter
 	compactionService *compaction.Service
 	eventPublisher    messageevent.Publisher
 	skillLoader       SkillLoader
@@ -710,7 +711,7 @@ func approvalResultMetadata(req toolapproval.Request) map[string]any {
 
 func isInteractiveApprovalSession(sessionType string) bool {
 	switch strings.ToLower(strings.TrimSpace(sessionType)) {
-	case "", "chat":
+	case "", "chat", "acp_agent":
 		return true
 	default:
 		return false

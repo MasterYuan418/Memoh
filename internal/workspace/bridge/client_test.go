@@ -5,7 +5,12 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -14,6 +19,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	pb "github.com/memohai/memoh/internal/workspace/bridgepb"
+	"github.com/memohai/memoh/internal/workspace/bridgesvc"
 )
 
 const testBufSize = 1 << 20
@@ -25,6 +31,29 @@ type rawReadTestServer struct {
 
 type tunnelEchoTestServer struct {
 	pb.UnimplementedContainerServiceServer
+}
+
+type execCancelTestServer struct {
+	pb.UnimplementedContainerServiceServer
+	started   chan struct{}
+	cancelled chan struct{}
+}
+
+func newExecCancelTestServer() *execCancelTestServer {
+	return &execCancelTestServer{
+		started:   make(chan struct{}),
+		cancelled: make(chan struct{}),
+	}
+}
+
+func (s *execCancelTestServer) Exec(stream pb.ContainerService_ExecServer) error {
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+	close(s.started)
+	<-stream.Context().Done()
+	close(s.cancelled)
+	return stream.Context().Err()
 }
 
 func (s *rawReadTestServer) ReadRaw(req *pb.ReadRawRequest, stream pb.ContainerService_ReadRawServer) error {
@@ -189,5 +218,195 @@ func TestClientTunnelSurvivesDialContextCancellation(t *testing.T) {
 	}
 	if got := string(buf[:n]); got != "ping" {
 		t.Fatalf("expected echoed payload, got %q", got)
+	}
+}
+
+func TestServeReverseHTTPForwardsRequests(t *testing.T) {
+	broker := bridgesvc.NewReverseHTTPBroker()
+	client := newTestClient(t, bridgesvc.New(bridgesvc.Options{ReverseHTTP: broker}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stop, err := client.ServeReverseHTTP(ctx, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Host != "127.0.0.1" {
+			t.Errorf("request host = %q", req.Host)
+		}
+		if req.URL.Path != "/mcp" || req.URL.RawQuery != "q=1" {
+			t.Errorf("request URL = %q", req.URL.RequestURI())
+		}
+		body, _ := io.ReadAll(req.Body)
+		if string(body) != "ping" {
+			t.Errorf("request body = %q", body)
+		}
+		if req.Header.Get("X-Test") != "ok" {
+			t.Errorf("request header X-Test = %q", req.Header.Get("X-Test"))
+		}
+		w.Header().Set("X-Reply", "yes")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("pong"))
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		req := httptest.NewRequest(http.MethodPost, "/mcp?q=1", strings.NewReader("ping"))
+		req.Header.Set("X-Test", "ok")
+		rec := httptest.NewRecorder()
+		broker.ServeHTTP(rec, req)
+		if rec.Code == http.StatusCreated {
+			if rec.Body.String() != "pong" || rec.Header().Get("X-Reply") != "yes" {
+				t.Fatalf("response body/header = %q/%q", rec.Body.String(), rec.Header().Get("X-Reply"))
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("reverse HTTP response code = %d body=%q", rec.Code, rec.Body.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestServeReverseHTTPRoutesConcurrentStreams(t *testing.T) {
+	broker := bridgesvc.NewReverseHTTPBroker()
+	client := newTestClient(t, bridgesvc.New(bridgesvc.Options{ReverseHTTP: broker}))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stopA, err := client.ServeReverseHTTPRoute(ctx, "/mcp/session-a", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("a"))
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopA()
+	stopB, err := client.ServeReverseHTTPRoute(ctx, "/mcp/session-b", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("b"))
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stopB()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		gotA := reverseHTTPTestRequest(t, broker, "/mcp/session-a")
+		gotB := reverseHTTPTestRequest(t, broker, "/mcp/session-b")
+		if gotA == "a" && gotB == "b" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("reverse HTTP routed responses = %q/%q", gotA, gotB)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestServeReverseHTTPStopWaitsForInFlightRequests(t *testing.T) {
+	broker := bridgesvc.NewReverseHTTPBroker()
+	client := newTestClient(t, bridgesvc.New(bridgesvc.Options{ReverseHTTP: broker}))
+
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	var startedOnce sync.Once
+	var finishedOnce sync.Once
+	stop, err := client.ServeReverseHTTP(context.Background(), http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+		startedOnce.Do(func() { close(started) })
+		<-req.Context().Done()
+		finishedOnce.Do(func() { close(finished) })
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var cancelReq context.CancelFunc
+	var brokerDone chan struct{}
+	deadline := time.Now().Add(time.Second)
+	for {
+		reqCtx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("ping")).WithContext(reqCtx)
+			rec := httptest.NewRecorder()
+			broker.ServeHTTP(rec, req)
+		}()
+		select {
+		case <-started:
+			cancelReq = cancel
+			brokerDone = done
+		case <-done:
+			cancel()
+			if time.Now().After(deadline) {
+				t.Fatal("reverse HTTP handler did not start")
+			}
+			time.Sleep(10 * time.Millisecond)
+			continue
+		case <-time.After(time.Until(deadline)):
+			cancel()
+			t.Fatal("reverse HTTP handler did not start")
+		}
+		break
+	}
+	defer cancelReq()
+
+	stopReturned := make(chan struct{})
+	go func() {
+		defer close(stopReturned)
+		stop()
+	}()
+
+	select {
+	case <-stopReturned:
+	case <-time.After(time.Second):
+		t.Fatal("stop did not return after cancelling in-flight request")
+	}
+	select {
+	case <-finished:
+	default:
+		t.Fatal("stop returned before in-flight request observed cancellation")
+	}
+
+	cancelReq()
+	select {
+	case <-brokerDone:
+	case <-time.After(time.Second):
+		t.Fatal("broker request did not finish")
+	}
+}
+
+func reverseHTTPTestRequest(t *testing.T, broker http.Handler, target string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, target, strings.NewReader("ping"))
+	rec := httptest.NewRecorder()
+	broker.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		return ""
+	}
+	return rec.Body.String()
+}
+
+func TestExecStreamCloseCancelsServerContext(t *testing.T) {
+	server := newExecCancelTestServer()
+	client := newTestClient(t, server)
+	stream, err := client.ExecStreamWithEnv(context.Background(), "sleep 60", "/tmp", -1, nil)
+	if err != nil {
+		t.Fatalf("ExecStreamWithEnv returned error: %v", err)
+	}
+	select {
+	case <-server.started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("server stream did not receive exec config")
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	select {
+	case <-server.cancelled:
+	case <-time.After(10 * time.Second):
+		t.Fatal("server stream context was not cancelled after ExecStream.Close")
 	}
 }

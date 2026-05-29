@@ -1,0 +1,398 @@
+package acpclient
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	acp "github.com/coder/acp-go-sdk"
+
+	"github.com/memohai/memoh/internal/workspace/bridge"
+	pb "github.com/memohai/memoh/internal/workspace/bridgepb"
+)
+
+const (
+	defaultTerminalOutputLimit = 128 * 1024
+	maxTerminalOutputLimit     = 1024 * 1024
+	defaultTerminalTimeout     = int32(600)
+	terminalReleaseGrace       = 200 * time.Millisecond
+)
+
+type terminalManager struct {
+	ctx         context.Context
+	client      *bridge.Client
+	root        string
+	defaultCwd  string
+	timeout     int32
+	baseEnv     []string
+	virtualRoot bool
+	events      *toolEventEmitter
+
+	mu        sync.Mutex
+	nextID    int
+	terminals map[string]*terminal
+}
+
+type terminal struct {
+	stream *bridge.ExecStream
+	limit  int
+	id     string
+	input  map[string]any
+
+	mu        sync.Mutex
+	output    string
+	truncated bool
+	exitCode  *int
+	signal    *string
+	reported  bool
+	done      chan struct{}
+	doneOnce  sync.Once
+	onDone    func(*terminal)
+}
+
+func newTerminalManager(ctx context.Context, client *bridge.Client, root, defaultCwd string, timeoutSeconds int32, baseEnv []string, virtualRoot bool, events *toolEventEmitter) *terminalManager { //nolint:contextcheck // terminal streams must live for the ACP turn, not a single RPC callback.
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = defaultTerminalTimeout
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &terminalManager{
+		ctx:         ctx,
+		client:      client,
+		root:        root,
+		defaultCwd:  defaultCwd,
+		timeout:     timeoutSeconds,
+		baseEnv:     append([]string(nil), baseEnv...),
+		virtualRoot: virtualRoot,
+		events:      events,
+		terminals:   map[string]*terminal{},
+	}
+}
+
+func (m *terminalManager) CreateTerminal(_ context.Context, p acp.CreateTerminalRequest) (acp.CreateTerminalResponse, error) {
+	cwd := m.defaultCwd
+	if p.Cwd != nil && strings.TrimSpace(*p.Cwd) != "" {
+		resolved, err := m.resolvePath(*p.Cwd)
+		if err != nil {
+			return acp.CreateTerminalResponse{}, err
+		}
+		cwd = resolved
+	}
+	command := buildShellCommand(p.Command, p.Args)
+	if strings.TrimSpace(command) == "" {
+		return acp.CreateTerminalResponse{}, errors.New("terminal command is required")
+	}
+	id := m.nextTerminalID()
+	input := map[string]any{
+		"command": command,
+	}
+	if p.Cwd != nil && strings.TrimSpace(*p.Cwd) != "" {
+		input["cwd"] = strings.TrimSpace(*p.Cwd)
+	}
+	m.emitToolCallStart("terminal-"+id, "exec", input)
+
+	limit := defaultTerminalOutputLimit
+	if p.OutputByteLimit != nil && *p.OutputByteLimit > 0 {
+		limit = *p.OutputByteLimit
+		if limit > maxTerminalOutputLimit {
+			limit = maxTerminalOutputLimit
+		}
+	}
+
+	env := append([]string(nil), m.baseEnv...)
+	for _, item := range p.Env {
+		name := strings.TrimSpace(item.Name)
+		if name == "" {
+			continue
+		}
+		env = append(env, name+"="+item.Value)
+	}
+	stream, err := m.client.ExecStreamWithEnv(m.ctx, command, cwd, m.timeout, env) //nolint:contextcheck // use the ACP turn context so terminal output survives the create RPC.
+	if err != nil {
+		m.emitToolCallEnd("terminal-"+id, "exec", input, toolErrorResult(err), err)
+		return acp.CreateTerminalResponse{}, err
+	}
+
+	term := &terminal{stream: stream, limit: limit, id: "terminal-" + id, input: input, done: make(chan struct{}), onDone: m.emitTerminalEnd}
+	m.mu.Lock()
+	m.terminals[id] = term
+	m.mu.Unlock()
+
+	go term.readLoop()
+	return acp.CreateTerminalResponse{TerminalId: id}, nil
+}
+
+func (m *terminalManager) resolvePath(path string) (string, error) {
+	if m.virtualRoot {
+		return ResolvePathUnderVirtualRoot(m.root, path)
+	}
+	return ResolvePathUnderRoot(m.root, path)
+}
+
+func (m *terminalManager) KillTerminal(_ context.Context, p acp.KillTerminalRequest) (acp.KillTerminalResponse, error) {
+	term, err := m.get(p.TerminalId)
+	if err != nil {
+		return acp.KillTerminalResponse{}, err
+	}
+	term.kill("killed")
+	m.emitTerminalEnd(term)
+	return acp.KillTerminalResponse{}, nil
+}
+
+func (m *terminalManager) TerminalOutput(_ context.Context, p acp.TerminalOutputRequest) (acp.TerminalOutputResponse, error) {
+	term, err := m.get(p.TerminalId)
+	if err != nil {
+		return acp.TerminalOutputResponse{}, err
+	}
+	output, truncated, status := term.snapshot()
+	if output == "" {
+		output = "\n"
+	}
+	return acp.TerminalOutputResponse{Output: output, Truncated: truncated, ExitStatus: status}, nil
+}
+
+func (m *terminalManager) ReleaseTerminal(_ context.Context, p acp.ReleaseTerminalRequest) (acp.ReleaseTerminalResponse, error) {
+	term, err := m.remove(p.TerminalId)
+	if err != nil {
+		return acp.ReleaseTerminalResponse{}, err
+	}
+	if !term.waitDone(terminalReleaseGrace) {
+		term.kill("released")
+	}
+	m.emitTerminalEnd(term)
+	return acp.ReleaseTerminalResponse{}, nil
+}
+
+func (m *terminalManager) WaitForTerminalExit(ctx context.Context, p acp.WaitForTerminalExitRequest) (acp.WaitForTerminalExitResponse, error) {
+	term, err := m.get(p.TerminalId)
+	if err != nil {
+		return acp.WaitForTerminalExitResponse{}, err
+	}
+	select {
+	case <-term.done:
+	case <-ctx.Done():
+		return acp.WaitForTerminalExitResponse{}, ctx.Err()
+	}
+	code, signal := term.exit()
+	m.emitTerminalEnd(term)
+	return acp.WaitForTerminalExitResponse{ExitCode: code, Signal: signal}, nil
+}
+
+func (m *terminalManager) killAll() {
+	m.mu.Lock()
+	terms := make([]*terminal, 0, len(m.terminals))
+	for id, term := range m.terminals {
+		terms = append(terms, term)
+		delete(m.terminals, id)
+	}
+	m.mu.Unlock()
+	for _, term := range terms {
+		term.kill("closed")
+		m.emitTerminalEnd(term)
+	}
+}
+
+func (m *terminalManager) emitToolCallStart(id, name string, input map[string]any) {
+	if m == nil || m.events == nil {
+		return
+	}
+	m.events.emit(StreamEvent{
+		Type:       StreamEventToolCallStart,
+		ToolCallID: id,
+		ToolName:   name,
+		Input:      input,
+	})
+}
+
+func (m *terminalManager) emitToolCallEnd(id, name string, input map[string]any, result any, err error) {
+	if m == nil || m.events == nil {
+		return
+	}
+	event := StreamEvent{
+		Type:       StreamEventToolCallEnd,
+		ToolCallID: id,
+		ToolName:   name,
+		Input:      input,
+		Result:     result,
+	}
+	if err != nil {
+		event.Error = err.Error()
+	}
+	m.events.emit(event)
+}
+
+func (m *terminalManager) emitTerminalEnd(term *terminal) {
+	if m == nil || term == nil || !term.markReported() {
+		return
+	}
+	output, truncated, status := term.snapshot()
+	result := map[string]any{
+		"stdout":    output,
+		"truncated": truncated,
+	}
+	if status != nil {
+		if status.ExitCode != nil {
+			result["exit_code"] = *status.ExitCode
+		}
+		if status.Signal != nil {
+			result["signal"] = *status.Signal
+		}
+	}
+	m.emitToolCallEnd(term.id, "exec", term.input, result, nil)
+}
+
+func (m *terminalManager) nextTerminalID() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nextID++
+	return fmt.Sprintf("term-%d", m.nextID)
+}
+
+func (m *terminalManager) get(id string) (*terminal, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	term := m.terminals[id]
+	if term == nil {
+		return nil, fmt.Errorf("terminal %q not found", id)
+	}
+	return term, nil
+}
+
+func (m *terminalManager) remove(id string) (*terminal, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	term := m.terminals[id]
+	if term == nil {
+		return nil, fmt.Errorf("terminal %q not found", id)
+	}
+	delete(m.terminals, id)
+	return term, nil
+}
+
+func (t *terminal) readLoop() {
+	defer func() {
+		if t.onDone != nil {
+			t.onDone(t)
+		}
+	}()
+	for {
+		output, err := t.stream.Recv()
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				sig := "stream_error"
+				t.finish(nil, &sig)
+			} else {
+				code := 0
+				t.finish(&code, nil)
+			}
+			return
+		}
+		switch output.GetStream() {
+		case pb.ExecOutput_STDOUT, pb.ExecOutput_STDERR:
+			t.appendOutput(string(output.GetData()))
+		case pb.ExecOutput_EXIT:
+			code := int(output.GetExitCode())
+			t.finish(&code, nil)
+			return
+		}
+	}
+}
+
+func (t *terminal) waitDone(timeout time.Duration) bool {
+	if t == nil {
+		return true
+	}
+	if timeout <= 0 {
+		select {
+		case <-t.done:
+			return true
+		default:
+			return false
+		}
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-t.done:
+		return true
+	case <-timer.C:
+		return false
+	}
+}
+
+func (t *terminal) appendOutput(s string) {
+	if s == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.output += s
+	if t.limit > 0 && len(t.output) > t.limit {
+		t.truncated = true
+		t.output = safeUTF8Suffix(t.output, t.limit)
+	}
+}
+
+func (t *terminal) snapshot() (string, bool, *acp.TerminalExitStatus) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var status *acp.TerminalExitStatus
+	if t.exitCode != nil || t.signal != nil {
+		status = &acp.TerminalExitStatus{ExitCode: t.exitCode, Signal: t.signal}
+	}
+	return t.output, t.truncated, status
+}
+
+func (t *terminal) exit() (*int, *string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.exitCode, t.signal
+}
+
+func (t *terminal) markReported() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.reported {
+		return false
+	}
+	t.reported = true
+	return true
+}
+
+func (t *terminal) kill(signal string) {
+	_ = t.stream.Close()
+	t.finish(nil, &signal)
+}
+
+func (t *terminal) finish(code *int, signal *string) {
+	t.doneOnce.Do(func() {
+		t.mu.Lock()
+		if code != nil {
+			v := *code
+			t.exitCode = &v
+		}
+		if signal != nil {
+			v := *signal
+			t.signal = &v
+		}
+		t.mu.Unlock()
+		close(t.done)
+	})
+}
+
+func safeUTF8Suffix(s string, maxBytes int) string {
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return s
+	}
+	start := len(s) - maxBytes
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
+}
