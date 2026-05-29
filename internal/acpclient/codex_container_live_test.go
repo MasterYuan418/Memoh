@@ -123,7 +123,7 @@ func startLiveBridgeContainer(t *testing.T, dataRoot string) *bridge.Client {
 
 	args := []string{
 		"run", "-d", "--rm",
-		"-e", "BRIDGE_TCP_ADDR=0.0.0.0:1455",
+		"-e", "BRIDGE_TCP_ADDR=:1455",
 		"-p", "127.0.0.1::1455",
 	}
 	if strings.TrimSpace(dataRoot) != "" {

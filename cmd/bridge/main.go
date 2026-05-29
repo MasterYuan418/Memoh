@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -87,8 +88,8 @@ func main() {
 	network := "unix"
 	address := os.Getenv("BRIDGE_SOCKET_PATH")
 	if tcpAddr := os.Getenv("BRIDGE_TCP_ADDR"); tcpAddr != "" {
-		if !isLoopbackTCPAddr(tcpAddr) {
-			logger.Error("BRIDGE_TCP_ADDR must be a loopback address; non-loopback TCP exposes bridge gRPC without TLS/auth", slog.String("addr", tcpAddr))
+		if !isBridgeTCPListenAddrAllowed(tcpAddr) {
+			logger.Error("BRIDGE_TCP_ADDR must be loopback or use :port bind shorthand; explicit non-loopback TCP exposes bridge gRPC without TLS/auth", slog.String("addr", tcpAddr))
 			return
 		}
 		network = "tcp"
@@ -142,4 +143,12 @@ func main() {
 		logger.Error("gRPC server failed", slog.Any("error", err))
 		return
 	}
+}
+
+func isBridgeTCPListenAddrAllowed(addr string) bool {
+	if isLoopbackTCPAddr(addr) {
+		return true
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(addr))
+	return err == nil && host == ""
 }
