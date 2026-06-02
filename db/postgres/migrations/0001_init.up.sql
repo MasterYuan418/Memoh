@@ -158,7 +158,7 @@ CREATE TABLE IF NOT EXISTS bots (
   search_provider_id UUID REFERENCES search_providers(id) ON DELETE SET NULL,
   memory_provider_id UUID REFERENCES memory_providers(id) ON DELETE SET NULL,
   heartbeat_enabled BOOLEAN NOT NULL DEFAULT false,
-  heartbeat_interval INTEGER NOT NULL DEFAULT 30,
+  heartbeat_interval INTEGER NOT NULL DEFAULT 1440,
   heartbeat_prompt TEXT NOT NULL DEFAULT '',
   heartbeat_model_id UUID REFERENCES models(id) ON DELETE SET NULL,
   compaction_enabled BOOLEAN NOT NULL DEFAULT false,

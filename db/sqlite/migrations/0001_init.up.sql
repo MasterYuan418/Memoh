@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS bots (
   search_provider_id TEXT REFERENCES search_providers(id) ON DELETE SET NULL,
   memory_provider_id TEXT REFERENCES memory_providers(id) ON DELETE SET NULL,
   heartbeat_enabled INTEGER NOT NULL DEFAULT 0,
-  heartbeat_interval INTEGER NOT NULL DEFAULT 30,
+  heartbeat_interval INTEGER NOT NULL DEFAULT 1440,
   heartbeat_prompt TEXT NOT NULL DEFAULT '',
   heartbeat_model_id TEXT REFERENCES models(id) ON DELETE SET NULL,
   compaction_enabled INTEGER NOT NULL DEFAULT 0,

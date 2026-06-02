@@ -3,7 +3,7 @@ package settings
 const (
 	DefaultLanguage          = "auto"
 	DefaultReasoningEffort   = "medium"
-	DefaultHeartbeatInterval = 30
+	DefaultHeartbeatInterval = 1440
 )
 
 type Settings struct {
