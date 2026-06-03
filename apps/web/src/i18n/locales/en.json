@@ -492,10 +492,24 @@
     "sessionActions": "Session actions",
     "tabBarToolkit": {
       "newTerminal": "Open new terminal",
+      "openBrowser": "Open browser",
       "openDisplay": "Open desktop window",
       "menu": "Tab actions",
       "closeAll": "Close all",
       "closeFinished": "Close saved and finished"
+    },
+    "browser": {
+      "title": "Browser",
+      "address": "Browser address",
+      "placeholder": "localhost:5173/",
+      "go": "Go",
+      "refresh": "Refresh",
+      "status": {
+        "connecting": "Connecting browser...",
+        "connected": "Browser connected",
+        "expired": "Browser session expired",
+        "error": "Browser unavailable"
+      }
     },
     "display": {
       "title": "Desktop",

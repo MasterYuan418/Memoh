@@ -1500,6 +1500,22 @@ export type HandlersAcpRuntimeModelRequest = {
     model_id?: string;
 };
 
+export type HandlersBrowserSessionCreateRequest = {
+    path?: string;
+    port?: number;
+};
+
+export type HandlersBrowserSessionCreateResponse = {
+    expires_at?: string;
+    id?: string;
+    url?: string;
+};
+
+export type HandlersBrowserSessionKeepAliveResponse = {
+    expires_at?: string;
+    id?: string;
+};
+
 export type HandlersCreateSessionRequest = {
     channel_type?: string;
     metadata?: {
@@ -3153,6 +3169,129 @@ export type PostBotsByBotIdContainerResponses = {
 };
 
 export type PostBotsByBotIdContainerResponse = PostBotsByBotIdContainerResponses[keyof PostBotsByBotIdContainerResponses];
+
+export type PostBotsByBotIdContainerBrowserSessionsData = {
+    /**
+     * Browser session request
+     */
+    body: HandlersBrowserSessionCreateRequest;
+    path: {
+        /**
+         * Bot ID
+         */
+        bot_id: string;
+    };
+    query?: never;
+    url: '/bots/{bot_id}/container/browser/sessions';
+};
+
+export type PostBotsByBotIdContainerBrowserSessionsErrors = {
+    /**
+     * Bad Request
+     */
+    400: HandlersErrorResponse;
+    /**
+     * Unauthorized
+     */
+    401: HandlersErrorResponse;
+    /**
+     * Forbidden
+     */
+    403: HandlersErrorResponse;
+    /**
+     * Internal Server Error
+     */
+    500: HandlersErrorResponse;
+};
+
+export type PostBotsByBotIdContainerBrowserSessionsError = PostBotsByBotIdContainerBrowserSessionsErrors[keyof PostBotsByBotIdContainerBrowserSessionsErrors];
+
+export type PostBotsByBotIdContainerBrowserSessionsResponses = {
+    /**
+     * OK
+     */
+    200: HandlersBrowserSessionCreateResponse;
+};
+
+export type PostBotsByBotIdContainerBrowserSessionsResponse = PostBotsByBotIdContainerBrowserSessionsResponses[keyof PostBotsByBotIdContainerBrowserSessionsResponses];
+
+export type DeleteBotsByBotIdContainerBrowserSessionsBySessionIdData = {
+    body?: never;
+    path: {
+        /**
+         * Bot ID
+         */
+        bot_id: string;
+        /**
+         * Browser session ID
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/bots/{bot_id}/container/browser/sessions/{session_id}';
+};
+
+export type DeleteBotsByBotIdContainerBrowserSessionsBySessionIdErrors = {
+    /**
+     * Unauthorized
+     */
+    401: HandlersErrorResponse;
+    /**
+     * Forbidden
+     */
+    403: HandlersErrorResponse;
+};
+
+export type DeleteBotsByBotIdContainerBrowserSessionsBySessionIdError = DeleteBotsByBotIdContainerBrowserSessionsBySessionIdErrors[keyof DeleteBotsByBotIdContainerBrowserSessionsBySessionIdErrors];
+
+export type DeleteBotsByBotIdContainerBrowserSessionsBySessionIdResponses = {
+    /**
+     * No Content
+     */
+    204: unknown;
+};
+
+export type PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveData = {
+    body?: never;
+    path: {
+        /**
+         * Bot ID
+         */
+        bot_id: string;
+        /**
+         * Browser session ID
+         */
+        session_id: string;
+    };
+    query?: never;
+    url: '/bots/{bot_id}/container/browser/sessions/{session_id}/keepalive';
+};
+
+export type PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveErrors = {
+    /**
+     * Unauthorized
+     */
+    401: HandlersErrorResponse;
+    /**
+     * Forbidden
+     */
+    403: HandlersErrorResponse;
+    /**
+     * Not Found
+     */
+    404: HandlersErrorResponse;
+};
+
+export type PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveError = PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveErrors[keyof PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveErrors];
+
+export type PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveResponses = {
+    /**
+     * OK
+     */
+    200: HandlersBrowserSessionKeepAliveResponse;
+};
+
+export type PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveResponse = PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveResponses[keyof PostBotsByBotIdContainerBrowserSessionsBySessionIdKeepaliveResponses];
 
 export type PostBotsByBotIdContainerDataRestoreData = {
     body?: never;

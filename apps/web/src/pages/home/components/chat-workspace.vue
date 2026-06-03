@@ -43,6 +43,15 @@
           />
         </KeepAlive>
       </template>
+      <BrowserPane
+        v-for="browser in browserTabs"
+        v-show="activeTab?.id === browser.id"
+        :key="`browser-pane:${browser.id}:${currentBotId}`"
+        :bot-id="currentBotId || ''"
+        :tab-id="browser.id"
+        :address="browser.address"
+        :active="activeTab?.id === browser.id"
+      />
       <div
         v-if="!activeTab"
         class="absolute inset-0 flex items-center justify-center"
@@ -72,6 +81,7 @@ import ChatPane from './chat-pane.vue'
 import FilePane from './file-pane.vue'
 import TerminalPane from './terminal-pane.vue'
 import DisplayPane from './display-pane.vue'
+import BrowserPane from './browser-pane.vue'
 import { type ComputedRef } from 'vue'
 
 const { t } = useI18n()
@@ -86,6 +96,7 @@ type TerminalTab = Extract<WorkspaceTab, { type: 'terminal' }>
 type DisplayTab = Extract<WorkspaceTab, { type: 'display' }>
 type ChatTab = Extract<WorkspaceTab, { type: 'chat' | 'draft' }>
 type FileTab = Extract<WorkspaceTab, { type: 'file' }>
+type BrowserTab = Extract<WorkspaceTab, { type: 'browser' }>
 
 const chatTabs = computed<ChatTab[]>(() =>
   tabs.value.filter((tab): tab is ChatTab => tab.type === 'chat' || tab.type === 'draft'),
@@ -120,6 +131,11 @@ const terminalTabs = computed<TerminalTab[]>(() =>
 const displayTabs = computed<DisplayTab[]>(() =>
   currentBotId.value
     ? tabs.value.filter((tab): tab is DisplayTab => tab.type === 'display')
+    : [],
+)
+const browserTabs = computed<BrowserTab[]>(() =>
+  currentBotId.value
+    ? tabs.value.filter((tab): tab is BrowserTab => tab.type === 'browser')
     : [],
 )
 const currentFile = TypeTab(fileTabs)

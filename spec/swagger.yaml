@@ -2536,6 +2536,29 @@ definitions:
       model_id:
         type: string
     type: object
+  handlers.browserSessionCreateRequest:
+    properties:
+      path:
+        type: string
+      port:
+        type: integer
+    type: object
+  handlers.browserSessionCreateResponse:
+    properties:
+      expires_at:
+        type: string
+      id:
+        type: string
+      url:
+        type: string
+    type: object
+  handlers.browserSessionKeepAliveResponse:
+    properties:
+      expires_at:
+        type: string
+      id:
+        type: string
+    type: object
   handlers.createSessionRequest:
     properties:
       channel_type:
@@ -4303,6 +4326,104 @@ paths:
           schema:
             $ref: '#/definitions/handlers.ErrorResponse'
       summary: Create and start MCP container for bot
+      tags:
+      - containerd
+  /bots/{bot_id}/container/browser/sessions:
+    post:
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Browser session request
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.browserSessionCreateRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.browserSessionCreateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Create browser proxy session for bot workspace
+      tags:
+      - containerd
+  /bots/{bot_id}/container/browser/sessions/{session_id}:
+    delete:
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Browser session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Delete browser proxy session
+      tags:
+      - containerd
+  /bots/{bot_id}/container/browser/sessions/{session_id}/keepalive:
+    post:
+      parameters:
+      - description: Bot ID
+        in: path
+        name: bot_id
+        required: true
+        type: string
+      - description: Browser session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.browserSessionKeepAliveResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.ErrorResponse'
+      summary: Keep browser proxy session alive
       tags:
       - containerd
   /bots/{bot_id}/container/data/restore:

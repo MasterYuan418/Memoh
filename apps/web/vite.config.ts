@@ -40,6 +40,29 @@ export default defineConfig(({ command }) => {
     }
   }
 
+  function isBrowserProxyHost(value: string | undefined): boolean {
+    const host = (value ?? '').split(':')[0]?.toLowerCase() ?? ''
+    return host.includes('.browser.')
+  }
+
+  const apiProxy = {
+    target: baseUrl,
+    changeOrigin: true,
+    rewrite: (path: string) => path.replace(/^\/api/, ''),
+    ws: true,
+    xfwd: true,
+  }
+
+  const browserHostProxy = {
+    target: baseUrl,
+    changeOrigin: false,
+    ws: true,
+    xfwd: true,
+    bypass(req: { headers: { host?: string }, url?: string }) {
+      return isBrowserProxyHost(req.headers.host) ? undefined : req.url
+    },
+  }
+
   return {
     plugins: [
       vue(),
@@ -53,24 +76,16 @@ export default defineConfig(({ command }) => {
       port,
       host,
       proxy: {
-        '/api': {
-          target: baseUrl,
-          changeOrigin: true,
-          rewrite: (path: string) => path.replace(/^\/api/, ''),
-          ws: true,
-        }
+        '/api': apiProxy,
+        '/': browserHostProxy,
       },
     },
     preview: {
       port,
       host: '0.0.0.0',
       proxy: {
-        '/api': {
-          target: baseUrl,
-          changeOrigin: true,
-          rewrite: (path: string) => path.replace(/^\/api/, ''),
-          ws: true,
-        }
+        '/api': apiProxy,
+        '/': browserHostProxy,
       },
       allowedHosts: true,
     },

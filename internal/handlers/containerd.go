@@ -40,6 +40,7 @@ type ContainerdHandler struct {
 	accountService   *accounts.Service
 	policyService    *policy.Service
 	displayService   *displaypkg.Service
+	browserSessions  *browserSessionStore
 }
 
 type ContainerGPURequest struct {
@@ -206,12 +207,15 @@ func NewContainerdHandler(log *slog.Logger, manager containerWorkspace, cfg conf
 		botService:       botService,
 		accountService:   accountService,
 		policyService:    policyService,
+		browserSessions:  newBrowserSessionStore(browserSessionIdleTTL),
 	}
 	h.displayService = displaypkg.NewService(h.logger, manager)
 	return h
 }
 
 func (h *ContainerdHandler) Register(e *echo.Echo) {
+	e.Pre(h.handleBrowserProxyPre)
+
 	group := e.Group("/bots/:bot_id/container")
 	group.POST("", h.CreateContainer)
 	group.GET("", h.GetContainer)
@@ -230,6 +234,10 @@ func (h *ContainerdHandler) Register(e *echo.Echo) {
 	// Terminal routes
 	group.GET("/terminal", h.GetTerminalInfo)
 	group.GET("/terminal/ws", h.HandleTerminalWS)
+	// Browser routes
+	group.POST("/browser/sessions", h.CreateBrowserSession)
+	group.POST("/browser/sessions/:session_id/keepalive", h.KeepAliveBrowserSession)
+	group.DELETE("/browser/sessions/:session_id", h.DeleteBrowserSession)
 	// Display routes
 	group.GET("/display", h.GetDisplayInfo)
 	group.POST("/display/prepare", h.PrepareDisplay)
