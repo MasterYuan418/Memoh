@@ -130,6 +130,63 @@ func (p *ContainerProvider) Tools(ctx context.Context, session SessionContext) (
 			},
 		},
 		{
+			Name: "apply_patch",
+			Description: fmt.Sprintf(`Apply a structured patch %s. This is a Memoh/Codex-style patch format, not a standard unified diff or git patch.
+
+Use this tool for multi-file edits, structured code changes, file creation, file deletion, or file moves. Use edit for one exact text replacement and write for full-file overwrite.
+
+Patch grammar:
+- The patch must start with "*** Begin Patch" and end with "*** End Patch".
+- Add a file with "*** Add File: path". Every following content line for that file must start with "+".
+- Delete a file with "*** Delete File: path".
+- Update a file with "*** Update File: path".
+- Move or rename a file by putting "*** Move to: new/path" immediately after an update header, before any changed lines.
+- Inside update hunks, use "@@" or "@@ context line" before changed lines. The optional context line helps locate the block in the file.
+- Changed lines use a one-character prefix: " " for unchanged context, "-" for removed lines, and "+" for added lines.
+- Use "*** End of File" inside an update hunk when the hunk should match the end of the file.
+- Paths are relative to the workspace by default. Absolute paths are accepted only when the workspace backend allows them.
+
+Examples:
+
+Add a file:
+*** Begin Patch
+*** Add File: docs/notes.md
++new line
+*** End Patch
+
+Update a file:
+*** Begin Patch
+*** Update File: path
+@@
+-old line
++new line
+*** End Patch
+
+Move a file:
+*** Begin Patch
+*** Update File: old/path.txt
+*** Move to: new/path.txt
+@@
+ old content
+*** End Patch
+
+Delete a file:
+*** Begin Patch
+*** Delete File: obsolete.txt
+*** End Patch
+`, workspace.locationDescription),
+			Parameters: map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"patch": map[string]any{"type": "string", "description": "Patch body using the apply_patch format. Paths are relative to the workspace by default, or absolute paths supported by the workspace backend."},
+				},
+				"required": []string{"patch"},
+			},
+			Execute: func(ctx *sdk.ToolExecContext, input any) (any, error) {
+				return p.execApplyPatch(ctx.Context, sess, input)
+			},
+		},
+		{
 			Name: "exec",
 			Description: fmt.Sprintf(`Execute a shell command %s. Runs in %s by default.
 
