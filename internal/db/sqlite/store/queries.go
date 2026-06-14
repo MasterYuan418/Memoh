@@ -547,6 +547,276 @@ func (q *Queries) DeleteBotUserGrantByID(ctx context.Context, id pgtype.UUID) er
 	return mapQueryErr(q.store.queries.DeleteBotUserGrantByID(ctx, sqliteID))
 }
 
+func (q *Queries) UpsertBotChannelAdmin(ctx context.Context, arg pgsqlc.UpsertBotChannelAdminParams) (pgsqlc.BotChannelAdmin, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return pgsqlc.BotChannelAdmin{}, errSQLiteQueriesNotConfigured
+	}
+	var sqliteArg sqlitesqlc.UpsertBotChannelAdminParams
+	if err := convertValue(arg, &sqliteArg); err != nil {
+		return pgsqlc.BotChannelAdmin{}, err
+	}
+	out, err := q.store.queries.UpsertBotChannelAdmin(ctx, sqliteArg)
+	if err != nil {
+		return pgsqlc.BotChannelAdmin{}, mapQueryErr(err)
+	}
+	var result pgsqlc.BotChannelAdmin
+	if err := convertValue(out, &result); err != nil {
+		return pgsqlc.BotChannelAdmin{}, err
+	}
+	return result, nil
+}
+
+func (q *Queries) CreateChannelLinkCode(ctx context.Context, arg pgsqlc.CreateChannelLinkCodeParams) (pgsqlc.ChannelLinkCode, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return pgsqlc.ChannelLinkCode{}, errSQLiteQueriesNotConfigured
+	}
+	var sqliteArg sqlitesqlc.CreateChannelLinkCodeParams
+	if err := convertValue(arg, &sqliteArg); err != nil {
+		return pgsqlc.ChannelLinkCode{}, err
+	}
+	out, err := q.store.queries.CreateChannelLinkCode(ctx, sqliteArg)
+	if err != nil {
+		return pgsqlc.ChannelLinkCode{}, mapQueryErr(err)
+	}
+	var result pgsqlc.ChannelLinkCode
+	if err := convertValue(out, &result); err != nil {
+		return pgsqlc.ChannelLinkCode{}, err
+	}
+	return result, nil
+}
+
+func (q *Queries) GetChannelLinkCodeByToken(ctx context.Context, token string) (pgsqlc.ChannelLinkCode, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return pgsqlc.ChannelLinkCode{}, errSQLiteQueriesNotConfigured
+	}
+	out, err := q.store.queries.GetChannelLinkCodeByToken(ctx, token)
+	if err != nil {
+		return pgsqlc.ChannelLinkCode{}, mapQueryErr(err)
+	}
+	var result pgsqlc.ChannelLinkCode
+	if err := convertValue(out, &result); err != nil {
+		return pgsqlc.ChannelLinkCode{}, err
+	}
+	return result, nil
+}
+
+func (q *Queries) MarkChannelLinkCodeConsumed(ctx context.Context, arg pgsqlc.MarkChannelLinkCodeConsumedParams) (pgsqlc.ChannelLinkCode, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return pgsqlc.ChannelLinkCode{}, errSQLiteQueriesNotConfigured
+	}
+	var sqliteArg sqlitesqlc.MarkChannelLinkCodeConsumedParams
+	if err := convertValue(arg, &sqliteArg); err != nil {
+		return pgsqlc.ChannelLinkCode{}, err
+	}
+	out, err := q.store.queries.MarkChannelLinkCodeConsumed(ctx, sqliteArg)
+	if err != nil {
+		return pgsqlc.ChannelLinkCode{}, mapQueryErr(err)
+	}
+	var result pgsqlc.ChannelLinkCode
+	if err := convertValue(out, &result); err != nil {
+		return pgsqlc.ChannelLinkCode{}, err
+	}
+	return result, nil
+}
+
+func (q *Queries) RedeemChannelLinkCode(ctx context.Context, arg pgsqlc.RedeemChannelLinkCodeParams) (pgsqlc.UserChannelIdentityBinding, error) {
+	if q == nil || q.store == nil || q.store.db == nil || q.store.queries == nil {
+		return pgsqlc.UserChannelIdentityBinding{}, errSQLiteQueriesNotConfigured
+	}
+	tx, err := q.store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	qtx := q.store.queries.WithTx(tx)
+
+	var markArg sqlitesqlc.MarkChannelLinkCodeConsumedParams
+	if err := convertValue(pgsqlc.MarkChannelLinkCodeConsumedParams{
+		Token:                     arg.Token,
+		ConsumedChannelIdentityID: arg.ChannelIdentityID,
+	}, &markArg); err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, err
+	}
+	code, err := qtx.MarkChannelLinkCodeConsumed(ctx, markArg)
+	if err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, mapQueryErr(err)
+	}
+
+	binding, err := qtx.UpsertUserChannelIdentityBinding(ctx, sqlitesqlc.UpsertUserChannelIdentityBindingParams{
+		UserID:            code.UserID,
+		ChannelIdentityID: markArg.ConsumedChannelIdentityID.String,
+	})
+	if err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, mapQueryErr(err)
+	}
+	if err := tx.Commit(); err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, err
+	}
+
+	var result pgsqlc.UserChannelIdentityBinding
+	if err := convertValue(binding, &result); err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, err
+	}
+	return result, nil
+}
+
+func (q *Queries) UpsertUserChannelIdentityBinding(ctx context.Context, arg pgsqlc.UpsertUserChannelIdentityBindingParams) (pgsqlc.UserChannelIdentityBinding, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return pgsqlc.UserChannelIdentityBinding{}, errSQLiteQueriesNotConfigured
+	}
+	var sqliteArg sqlitesqlc.UpsertUserChannelIdentityBindingParams
+	if err := convertValue(arg, &sqliteArg); err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, err
+	}
+	out, err := q.store.queries.UpsertUserChannelIdentityBinding(ctx, sqliteArg)
+	if err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, mapQueryErr(err)
+	}
+	var result pgsqlc.UserChannelIdentityBinding
+	if err := convertValue(out, &result); err != nil {
+		return pgsqlc.UserChannelIdentityBinding{}, err
+	}
+	return result, nil
+}
+
+func (q *Queries) ListChannelIdentityBindings(ctx context.Context) ([]pgsqlc.ListChannelIdentityBindingsRow, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return nil, errSQLiteQueriesNotConfigured
+	}
+	out, err := q.store.queries.ListChannelIdentityBindings(ctx)
+	if err != nil {
+		return nil, mapQueryErr(err)
+	}
+	var result []pgsqlc.ListChannelIdentityBindingsRow
+	if err := convertValue(out, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (q *Queries) ListChannelIdentityBindingsForUser(ctx context.Context, userID pgtype.UUID) ([]pgsqlc.ListChannelIdentityBindingsForUserRow, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return nil, errSQLiteQueriesNotConfigured
+	}
+	var sqliteUserID string
+	if err := convertValue(userID, &sqliteUserID); err != nil {
+		return nil, err
+	}
+	out, err := q.store.queries.ListChannelIdentityBindingsForUser(ctx, sqliteUserID)
+	if err != nil {
+		return nil, mapQueryErr(err)
+	}
+	var result []pgsqlc.ListChannelIdentityBindingsForUserRow
+	if err := convertValue(out, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (q *Queries) ListChannelIdentityBindingsForBot(ctx context.Context, botID pgtype.UUID) ([]pgsqlc.ListChannelIdentityBindingsForBotRow, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return nil, errSQLiteQueriesNotConfigured
+	}
+	var sqliteBotID string
+	if err := convertValue(botID, &sqliteBotID); err != nil {
+		return nil, err
+	}
+	out, err := q.store.queries.ListChannelIdentityBindingsForBot(ctx, sqliteBotID)
+	if err != nil {
+		return nil, mapQueryErr(err)
+	}
+	var result []pgsqlc.ListChannelIdentityBindingsForBotRow
+	if err := convertValue(out, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (q *Queries) DeleteUserChannelIdentityBinding(ctx context.Context, arg pgsqlc.DeleteUserChannelIdentityBindingParams) error {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return errSQLiteQueriesNotConfigured
+	}
+	var sqliteArg sqlitesqlc.DeleteUserChannelIdentityBindingParams
+	if err := convertValue(arg, &sqliteArg); err != nil {
+		return err
+	}
+	return mapQueryErr(q.store.queries.DeleteUserChannelIdentityBinding(ctx, sqliteArg))
+}
+
+func (q *Queries) ListUserIDsByChannelIdentity(ctx context.Context, channelIdentityID pgtype.UUID) ([]pgtype.UUID, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return nil, errSQLiteQueriesNotConfigured
+	}
+	var sqliteID string
+	if err := convertValue(channelIdentityID, &sqliteID); err != nil {
+		return nil, err
+	}
+	out, err := q.store.queries.ListUserIDsByChannelIdentity(ctx, sqliteID)
+	if err != nil {
+		return nil, mapQueryErr(err)
+	}
+	result := make([]pgtype.UUID, 0, len(out))
+	for _, idStr := range out {
+		var id pgtype.UUID
+		if err := convertValue(idStr, &id); err != nil {
+			return nil, err
+		}
+		result = append(result, id)
+	}
+	return result, nil
+}
+
+func (q *Queries) DeleteBotChannelAdmin(ctx context.Context, arg pgsqlc.DeleteBotChannelAdminParams) error {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return errSQLiteQueriesNotConfigured
+	}
+	var sqliteArg sqlitesqlc.DeleteBotChannelAdminParams
+	if err := convertValue(arg, &sqliteArg); err != nil {
+		return err
+	}
+	return mapQueryErr(q.store.queries.DeleteBotChannelAdmin(ctx, sqliteArg))
+}
+
+func (q *Queries) GetBotChannelAdmin(ctx context.Context, arg pgsqlc.GetBotChannelAdminParams) (pgsqlc.BotChannelAdmin, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return pgsqlc.BotChannelAdmin{}, errSQLiteQueriesNotConfigured
+	}
+	var sqliteArg sqlitesqlc.GetBotChannelAdminParams
+	if err := convertValue(arg, &sqliteArg); err != nil {
+		return pgsqlc.BotChannelAdmin{}, err
+	}
+	out, err := q.store.queries.GetBotChannelAdmin(ctx, sqliteArg)
+	if err != nil {
+		return pgsqlc.BotChannelAdmin{}, mapQueryErr(err)
+	}
+	var result pgsqlc.BotChannelAdmin
+	if err := convertValue(out, &result); err != nil {
+		return pgsqlc.BotChannelAdmin{}, err
+	}
+	return result, nil
+}
+
+func (q *Queries) ListBotChannelAdmins(ctx context.Context, botID pgtype.UUID) ([]pgsqlc.ListBotChannelAdminsRow, error) {
+	if q == nil || q.store == nil || q.store.queries == nil {
+		return nil, errSQLiteQueriesNotConfigured
+	}
+	var sqliteBotID string
+	if err := convertValue(botID, &sqliteBotID); err != nil {
+		return nil, err
+	}
+	out, err := q.store.queries.ListBotChannelAdmins(ctx, sqliteBotID)
+	if err != nil {
+		return nil, mapQueryErr(err)
+	}
+	var result []pgsqlc.ListBotChannelAdminsRow
+	if err := convertValue(out, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (q *Queries) ListBotUserGrants(ctx context.Context, botID pgtype.UUID) ([]pgsqlc.ListBotUserGrantsRow, error) {
 	if q == nil || q.store == nil || q.store.queries == nil {
 		return nil, errSQLiteQueriesNotConfigured

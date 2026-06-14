@@ -55,7 +55,12 @@
           </SettingsRow>
         </SettingsSection>
 
-        <!-- Card 3 · Session: user id + sign out (low-frequency, kept at the bottom) -->
+        <!-- Connected IM Accounts -->
+        <ConnectedAccountsSection />
+
+        <!-- Card 3 · Session: user id + sign out (low-frequency, kept at the bottom).
+             The sign-out row is hidden in the desktop shell: it auto-logs in and
+             has no login screen to return to. -->
         <SettingsSection :title="$t('settings.sessionSection')">
           <SettingsRow :label="$t('settings.userID')">
             <div class="flex items-center gap-1 text-sm text-muted-foreground">
@@ -78,7 +83,10 @@
             </div>
           </SettingsRow>
 
-          <SettingsRow :label="$t('auth.logout')">
+          <SettingsRow
+            v-if="!desktopShell"
+            :label="$t('auth.logout')"
+          >
             <ConfirmPopover
               :message="$t('auth.logoutConfirm')"
               @confirm="onLogout"
@@ -100,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, inject, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from '@memohai/ui'
 import { useI18n } from 'vue-i18n'
@@ -113,12 +121,14 @@ import SettingsRow from '@/components/settings/row.vue'
 import SettingsSection from '@/components/settings/section.vue'
 import ProfileIdentity from './components/profile-identity.vue'
 import PasswordSection from './components/password-section.vue'
+import ConnectedAccountsSection from './components/connected-accounts-section.vue'
 
 import { getUsersMe, putUsersMe, putUsersMePassword } from '@memohai/sdk'
 import type { AccountsAccount, AccountsUpdateProfileRequest, AccountsUpdatePasswordRequest } from '@memohai/sdk'
 import { useUserStore } from '@/store/user'
 import { resolveApiErrorMessage } from '@/utils/api-error'
 import { useAvatarInitials } from '@/composables/useAvatarInitials'
+import { DesktopShellKey } from '@/lib/desktop-shell'
 
 type UserAccount = AccountsAccount
 
@@ -126,6 +136,10 @@ const { t } = useI18n()
 const router = useRouter()
 const userStore = useUserStore()
 const { userInfo, exitLogin, patchUserInfo } = userStore
+
+// In the desktop shell the app auto-logs in and has no login screen, so the
+// sign-out action is hidden there. Connected Accounts stays available.
+const desktopShell = inject(DesktopShellKey, false)
 
 // ---- User data ----
 const account = ref<UserAccount | null>(null)

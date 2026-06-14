@@ -25,6 +25,7 @@ type Bot struct {
 	ReasoningEffort        string         `json:"reasoning_effort"`
 	ChatModelID            sql.NullString `json:"chat_model_id"`
 	SearchProviderID       sql.NullString `json:"search_provider_id"`
+	FetchProviderID        sql.NullString `json:"fetch_provider_id"`
 	MemoryProviderID       sql.NullString `json:"memory_provider_id"`
 	HeartbeatEnabled       int64          `json:"heartbeat_enabled"`
 	HeartbeatInterval      int64          `json:"heartbeat_interval"`
@@ -49,7 +50,6 @@ type Bot struct {
 	Metadata               string         `json:"metadata"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
-	FetchProviderID        sql.NullString `json:"fetch_provider_id"`
 }
 
 type BotAclRule struct {
@@ -68,6 +68,16 @@ type BotAclRule struct {
 	CreatedByUserID        sql.NullString `json:"created_by_user_id"`
 	CreatedAt              string         `json:"created_at"`
 	UpdatedAt              string         `json:"updated_at"`
+}
+
+type BotChannelAdmin struct {
+	ID                string         `json:"id"`
+	BotID             string         `json:"bot_id"`
+	ChannelIdentityID string         `json:"channel_identity_id"`
+	Granted           int64          `json:"granted"`
+	CreatedByUserID   sql.NullString `json:"created_by_user_id"`
+	CreatedAt         string         `json:"created_at"`
+	UpdatedAt         string         `json:"updated_at"`
 }
 
 type BotChannelConfig struct {
@@ -262,6 +272,16 @@ type ChannelIdentity struct {
 	Metadata         string         `json:"metadata"`
 	CreatedAt        string         `json:"created_at"`
 	UpdatedAt        string         `json:"updated_at"`
+}
+
+type ChannelLinkCode struct {
+	Token                     string         `json:"token"`
+	UserID                    string         `json:"user_id"`
+	ChannelType               string         `json:"channel_type"`
+	ExpiresAt                 string         `json:"expires_at"`
+	ConsumedAt                sql.NullString `json:"consumed_at"`
+	ConsumedChannelIdentityID sql.NullString `json:"consumed_channel_identity_id"`
+	CreatedAt                 string         `json:"created_at"`
 }
 
 type Container struct {
@@ -553,6 +573,14 @@ type UserChannelBinding struct {
 	Config      string `json:"config"`
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
+}
+
+type UserChannelIdentityBinding struct {
+	ID                string `json:"id"`
+	UserID            string `json:"user_id"`
+	ChannelIdentityID string `json:"channel_identity_id"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
 }
 
 type UserInputRequest struct {
