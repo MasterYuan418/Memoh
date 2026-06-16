@@ -87,6 +87,7 @@ import (
 	netctl "github.com/memohai/memoh/internal/network"
 	netoverlay "github.com/memohai/memoh/internal/network/overlay"
 	pipelinepkg "github.com/memohai/memoh/internal/pipeline"
+	pluginspkg "github.com/memohai/memoh/internal/plugins"
 	"github.com/memohai/memoh/internal/policy"
 	"github.com/memohai/memoh/internal/providers"
 	"github.com/memohai/memoh/internal/registry"
@@ -239,6 +240,12 @@ func provideAccountStore(cfg config.Config, postgresStore *postgresstore.Store, 
 
 func provideBridgeProvider(manage *workspace.Manager) bridge.Provider {
 	return manage
+}
+
+func provideHooksService(log *slog.Logger, provider bridge.Provider, pluginService *pluginspkg.Service) *hookspkg.Service {
+	service := hookspkg.NewService(log, provider)
+	service.SetPluginService(pluginService)
+	return service
 }
 
 func provideWorkspaceManager(lc fx.Lifecycle, log *slog.Logger, service ctr.Service, networkController netctl.Controller, cfg config.Config, conn *pgxpool.Pool, queries dbstore.Queries) (*workspace.Manager, error) {
@@ -604,8 +611,10 @@ func provideChannelLifecycleService(channelStore *channel.Store, channelManager 
 	return channel.NewLifecycle(channelStore, channelManager)
 }
 
-func provideContainerdHandler(log *slog.Logger, manager *workspace.Manager, cfg config.Config, rc *boot.RuntimeConfig, botService *bots.Service, accountService *accounts.Service, policyService *policy.Service) *handlers.ContainerdHandler {
-	return handlers.NewContainerdHandler(log, manager, cfg.Workspace, rc.ContainerBackend, botService, accountService, policyService)
+func provideContainerdHandler(log *slog.Logger, manager *workspace.Manager, cfg config.Config, rc *boot.RuntimeConfig, botService *bots.Service, accountService *accounts.Service, policyService *policy.Service, pluginService *pluginspkg.Service) *handlers.ContainerdHandler {
+	h := handlers.NewContainerdHandler(log, manager, cfg.Workspace, rc.ContainerBackend, botService, accountService, policyService)
+	h.SetPluginService(pluginService)
+	return h
 }
 
 func provideBotBackupService(log *slog.Logger, conn *pgxpool.Pool, queries dbstore.Queries, botService *bots.Service, settingsService *settings.Service, aclService *acl.Service, channelStore *channel.Store, mcpService *mcp.ConnectionService, scheduleService *schedule.Service, emailService *emailpkg.Service, providerService *providers.Service, modelsService *models.Service, searchProviderService *searchproviders.Service, fetchProviderService *fetchproviders.Service, memoryProviderService *memprovider.Service, manager *workspace.Manager) *botbackup.Service {
