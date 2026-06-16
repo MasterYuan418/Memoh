@@ -1224,6 +1224,32 @@
       "resetWarningExtra": "カスタムのバイパスルールとレビュー必須ルールは失われます。",
       "title": "ツール呼び出しの承認",
       "intro": "Bot がファイルを読み取る、ファイルを変更する、またはコマンドを実行する前に承認を要求します。操作ごとにルールを設定できます。バイパスパターンは自動承認され、レビュー必須パターンは承認を強制します。",
+      "status": {
+        "on": "承認が有効です",
+        "off": "承認が無効です"
+      },
+      "rules": {
+        "title": "ツールルール",
+        "reset": "推奨設定にリセット"
+      },
+      "behavior": {
+        "label": "デフォルトの動作",
+        "review": "デフォルトでレビュー",
+        "auto": "デフォルトで自動承認"
+      },
+      "autoApprove": {
+        "pathsTitle": "これらのパスを自動承認",
+        "commandsTitle": "これらのコマンドを自動承認"
+      },
+      "review": {
+        "pathsTitle": "常にレビューを要求",
+        "commandsTitle": "常にレビューを要求"
+      },
+      "toolNames": {
+        "read": "ファイル読み取り",
+        "write": "ファイル書き込み",
+        "exec": "シェルコマンド"
+      },
       "tools": {
         "read": "ワークスペース内のファイルを読み取り、ディレクトリを一覧表示する",
         "write": "ワークスペース内でファイルの書き込み、編集、patch の適用を行う",
@@ -1235,6 +1261,10 @@
       "mustReview": "レビュー必須 (拒否リスト)",
       "mustReviewHint": "これらのパターンのいずれかに一致する呼び出しは、このツールが自動承認されている場合でも常に承認を要求します。",
       "placeholders": {
+        "filePaths": "/data/**\n/tmp/**",
+        "fileReview": "/etc/**\n.env*",
+        "execCommands": "ls\ngit status",
+        "execReview": "rm -rf *\nsudo *",
         "fileBypass": "/tmp/**\n/data/**",
         "fileMustReview": "/etc/**\n.env*",
         "execBypass": "ls\npwd\ngit status",
