@@ -2,6 +2,7 @@
   <SidebarProvider
     class="min-h-[initial]! absolute inset-0 "
     :default-open="true"
+    disable-default-shortcut
   >
     <!-- Fixed width, never w-fit: the panel must not be sized by its content, or a
          long back label / name would stretch the whole sidebar. Width is pinned per
