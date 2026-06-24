@@ -1,5 +1,6 @@
 name: Xiaomi MiMo Transcription
 client_type: mimo-transcription
+icon: mimo-color
 base_url: https://api.xiaomimimo.com/v1
 
 models:

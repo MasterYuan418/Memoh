@@ -13,7 +13,7 @@ const (
 	defaultBaseURL            = "https://api.xiaomimimo.com/v1"
 	defaultSpeechModelID      = "mimo-v2.5-tts"
 	defaultTranscriptionModel = "mimo-v2.5-asr"
-	defaultVoice              = "Chloe"
+	defaultVoice              = "mimo_default"
 	defaultSpeechFormat       = "wav"
 	defaultLanguage           = "auto"
 	pcmSampleRate      uint32 = 24000
@@ -98,4 +98,3 @@ func buildWAV(pcm []byte, sampleRate uint32) []byte {
 	buf.Write(pcm)
 	return buf.Bytes()
 }
-

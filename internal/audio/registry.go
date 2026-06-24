@@ -106,7 +106,7 @@ func NewRegistry() *Registry {
 	}
 	baseDefs := defaultProviderDefinitions()
 	for _, def := range baseDefs {
-		if def.Factory == nil && def.TranscriptionFactory != nil {
+		if def.Factory == nil && def.TranscriptionFactory != nil && !isTranscriptionClientType(def.ClientType) {
 			continue
 		}
 		r.Register(def)
@@ -691,27 +691,26 @@ func defaultProviderDefinitions() []ProviderDefinition {
 		{
 			ClientType:  models.ClientTypeMimoSpeech,
 			DisplayName: "Xiaomi MiMo Speech",
-			Description: "Xiaomi MiMo V2.5 TTS and ASR via chat/completions",
+			Icon:        "mimo-color",
+			Description: "Xiaomi MiMo V2.5 text-to-speech via chat/completions",
 			ConfigSchema: ConfigSchema{Fields: []FieldSchema{
 				secretField("api_key", "API Key", "MiMo API key", true, 10),
 				stringField("base_url", "Base URL", "Override the API base URL", false, "https://api.xiaomimimo.com/v1", 20),
 			}},
-			DefaultModel:              "mimo-v2.5-tts",
-			SupportsList:              false,
-			DefaultTranscriptionModel: "mimo-v2.5-asr",
-			SupportsTranscriptionList: false,
+			DefaultModel: "mimo-v2.5-tts",
+			SupportsList: false,
 			Models: []ModelInfo{{
 				ID:          "mimo-v2.5-tts",
 				Name:        "mimo-v2.5-tts",
 				Description: "MiMo V2.5 preset-voice text-to-speech model",
 				ConfigSchema: ConfigSchema{Fields: []FieldSchema{
-					stringField("voice", "Voice", "MiMo preset voice ID", false, "Chloe", 10),
+					stringField("voice", "Voice", "MiMo preset voice ID", false, "mimo_default", 10),
 					enumField("format", "Format", "Output audio format", false, []string{"wav", "pcm16"}, 20),
 					advancedStringField("style_prompt", "Style Prompt", "Optional user-role style prompt that guides speaking style", false, "", 30),
 				}},
 				Capabilities: ModelCapabilities{
 					ConfigSchema: ConfigSchema{Fields: []FieldSchema{
-						stringField("voice", "Voice", "MiMo preset voice ID", false, "Chloe", 10),
+						stringField("voice", "Voice", "MiMo preset voice ID", false, "mimo_default", 10),
 						enumField("format", "Format", "Output audio format", false, []string{"wav", "pcm16"}, 20),
 						advancedStringField("style_prompt", "Style Prompt", "Optional user-role style prompt that guides speaking style", false, "", 30),
 					}},
@@ -739,6 +738,43 @@ func defaultProviderDefinitions() []ProviderDefinition {
 				}
 				return mimoaudio.NewSpeech(opts...), nil
 			},
+			Order: 65,
+		},
+		{
+			ClientType:  models.ClientTypeMimoTranscription,
+			DisplayName: "Xiaomi MiMo Transcription",
+			Icon:        "mimo-color",
+			Description: "Xiaomi MiMo V2.5 automatic speech recognition via chat/completions",
+			ConfigSchema: ConfigSchema{Fields: []FieldSchema{
+				secretField("api_key", "API Key", "MiMo API key", true, 10),
+				stringField("base_url", "Base URL", "Override the API base URL", false, "https://api.xiaomimimo.com/v1", 20),
+			}},
+			DefaultModel:              "mimo-v2.5-asr",
+			SupportsList:              false,
+			DefaultTranscriptionModel: "mimo-v2.5-asr",
+			SupportsTranscriptionList: false,
+			Models: []ModelInfo{{
+				ID:          "mimo-v2.5-asr",
+				Name:        "mimo-v2.5-asr",
+				Description: "MiMo V2.5 automatic speech recognition model",
+				ConfigSchema: ConfigSchema{Fields: []FieldSchema{
+					stringField("language", "Language", "ASR language hint, e.g. auto or zh", false, "auto", 10),
+				}},
+				Capabilities: ModelCapabilities{ConfigSchema: ConfigSchema{Fields: []FieldSchema{
+					stringField("language", "Language", "ASR language hint, e.g. auto or zh", false, "auto", 10),
+				}}},
+			}},
+			TranscriptionModels: []ModelInfo{{
+				ID:          "mimo-v2.5-asr",
+				Name:        "mimo-v2.5-asr",
+				Description: "MiMo V2.5 automatic speech recognition model",
+				ConfigSchema: ConfigSchema{Fields: []FieldSchema{
+					stringField("language", "Language", "ASR language hint, e.g. auto or zh", false, "auto", 10),
+				}},
+				Capabilities: ModelCapabilities{ConfigSchema: ConfigSchema{Fields: []FieldSchema{
+					stringField("language", "Language", "ASR language hint, e.g. auto or zh", false, "auto", 10),
+				}}},
+			}},
 			TranscriptionFactory: func(config map[string]any) (sdk.TranscriptionProvider, error) {
 				opts := []mimoaudio.Option{}
 				if v := configString(config, "api_key"); v != "" {
@@ -749,7 +785,7 @@ func defaultProviderDefinitions() []ProviderDefinition {
 				}
 				return mimoaudio.NewTranscription(opts...), nil
 			},
-			Order: 65,
+			Order: 66,
 		},
 		{
 			ClientType:  models.ClientTypeVolcengineSpeech,
