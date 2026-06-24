@@ -485,7 +485,9 @@ func IsValidClientType(clientType ClientType) bool {
 		ClientTypeAlibabaSpeech,
 		ClientTypeMicrosoftSpeech,
 		ClientTypeGoogleSpeech,
-		ClientTypeGoogleTranscription:
+		ClientTypeGoogleTranscription,
+		ClientTypeMimoSpeech,
+		ClientTypeMimoTranscription:
 		return true
 	default:
 		return false

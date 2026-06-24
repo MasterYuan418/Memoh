@@ -36,7 +36,9 @@ WHERE client_type NOT IN (
   'alibabacloud-speech',
   'microsoft-speech',
   'google-speech',
-  'google-transcription'
+  'google-transcription',
+  'mimo-speech',
+  'mimo-transcription'
 )
 ORDER BY created_at DESC;
 
@@ -74,7 +76,9 @@ WHERE client_type NOT IN (
   'alibabacloud-speech',
   'microsoft-speech',
   'google-speech',
-  'google-transcription'
+  'google-transcription',
+  'mimo-speech',
+  'mimo-transcription'
 );
 
 -- name: CreateModel :one
@@ -248,7 +252,8 @@ WHERE client_type IN (
   'minimax-speech',
   'volcengine-speech',
   'alibabacloud-speech',
-  'microsoft-speech'
+  'microsoft-speech',
+  'mimo-speech'
 )
 ORDER BY created_at DESC;
 
@@ -259,7 +264,8 @@ WHERE client_type IN (
   'openrouter-transcription',
   'elevenlabs-transcription',
   'deepgram-transcription',
-  'google-transcription'
+  'google-transcription',
+  'mimo-transcription'
 )
 ORDER BY created_at DESC;
 

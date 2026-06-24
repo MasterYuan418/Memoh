@@ -39,6 +39,8 @@ const (
 	ClientTypeMicrosoftSpeech         ClientType = "microsoft-speech"
 	ClientTypeGoogleSpeech            ClientType = "google-speech"
 	ClientTypeGoogleTranscription     ClientType = "google-transcription"
+	ClientTypeMimoSpeech              ClientType = "mimo-speech"
+	ClientTypeMimoTranscription       ClientType = "mimo-transcription"
 )
 
 const (
