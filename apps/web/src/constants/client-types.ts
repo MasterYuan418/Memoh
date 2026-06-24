@@ -110,6 +110,16 @@ export const CLIENT_TYPE_META: Record<string, ClientTypeMeta> = {
     label: 'Google Transcription',
     hint: 'Gemini speech transcription',
   },
+  'mimo-speech': {
+    value: 'mimo-speech',
+    label: 'Xiaomi MiMo Speech',
+    hint: 'MiMo V2.5 text-to-speech',
+  },
+  'mimo-transcription': {
+    value: 'mimo-transcription',
+    label: 'Xiaomi MiMo Transcription',
+    hint: 'MiMo V2.5 speech-to-text',
+  },
 }
 
 export const CLIENT_TYPE_LIST: ClientTypeMeta[] = Object.values(CLIENT_TYPE_META)

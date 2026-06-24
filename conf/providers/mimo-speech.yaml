@@ -1,0 +1,9 @@
+name: Xiaomi MiMo Speech
+client_type: mimo-speech
+icon: mimo-color
+base_url: https://api.xiaomimimo.com/v1
+
+models:
+  - model_id: mimo-v2.5-tts
+    name: MiMo V2.5 TTS
+    type: speech

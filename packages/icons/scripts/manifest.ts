@@ -24,6 +24,7 @@ const llmProviders: string[] = [
   ...withVariants('huggingface', ['color']),
   ...withVariants('lmstudio', []),
   ...withVariants('minimax', ['color']),
+  ...withVariants('mimo', ['color']),
   ...withVariants('mistral', ['color']),
   ...withVariants('moonshot', []),
   ...withVariants('ollama', []),
